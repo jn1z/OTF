@@ -1,0 +1,93 @@
+plugins {
+    id 'java'
+    id 'jacoco' // code coverage
+}
+
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'Main',
+        'Implementation-Title': project.name,
+        'Implementation-Version': project.version,
+        'Built-Date': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+    }
+}
+
+allprojects {
+    gradle.projectsEvaluated {
+        tasks.withType(JavaCompile) {
+            options.compilerArgs << "-Xlint:all"
+            options.release = 17
+            sourceCompatibility = '17'
+            targetCompatibility = '17'
+        }
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+    reportsDirectory = layout.buildDirectory.dir('customJacocoReportDir')
+}
+
+jacocoTestReport {
+    reports {
+        xml.required = false
+        csv.required = false
+        html.outputLocation = layout.buildDirectory.dir('jacocoHtml')
+    }
+}
+
+dependencies {
+    implementation 'it.unimi.dsi:fastutil:8.5.15'
+    implementation 'net.automatalib:automata-serialization-ba:0.12.0'
+    implementation 'net.automatalib:automata-util:0.12.0'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+}
+
+
+test {
+     useJUnitPlatform {
+        excludeTags 'IntegTest'
+    }
+    maxHeapSize = "5g" // maximum heap size
+    finalizedBy jacocoTestReport // report is always generated after tests run
+    dependsOn cleanTest
+    // testLogging.showStandardStreams = true
+}
+jacocoTestReport {
+    dependsOn test // tests are required to run before generating the report
+}
+
+task customFatJar(type: Jar) {
+     manifest {
+        attributes 'Main-Class': 'OTF/Main'
+     }
+     archiveBaseName = 'OTFStandalone'
+     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+     with jar
+}
+
+task integTest(type: Test) {
+    useJUnitPlatform {
+        includeTags 'IntegTest'
+    }
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    testLogging.showStandardStreams = true
+}
+
