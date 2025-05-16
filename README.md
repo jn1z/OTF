@@ -12,9 +12,9 @@ See the paper [Deconstructing Subset Construction: Reducing While Determinizing]
 ## The following algorithms are implemented for comparison:
 
 1. SC (Subset Construction)
-2. SCS (Subset Construction with Simulation equivalence reduction)
+2. SCS (Subset Construction with Simulation enhancement. Similar to Glabbeek-Ploeger's SUBSET(close c=) )
 3. BRZ (Brzozowski's method)
-4. BRZS (Brzozowski's method with Simulation equivalence reduction)
+4. BRZS (Brzozowski's method with simulation enhancement)
 
 ## What this repository contains
 
