@@ -50,23 +50,23 @@ public class ACEltsTest {
     ACElts acElts = new ACElts(b);
     SmartBitSet b2;
     b2 =  BitSetUtils.convertListToSmartBitSet(List.of(1,2,3,4));
-    acElts.unifyEltIntoAC(b2, 4);     // {1,2,3,4} ignored due to {1,2,3}
+    acElts.unifyEltIntoAC(b2, 4, 1);     // {1,2,3,4} ignored due to {1,2,3}
     Assertions.assertEquals("{1,2,3},", acElts.toString().replace(" ",""));
     Assertions.assertEquals(1, acElts.getEltsSize());
     Assertions.assertEquals(1, acElts.getLiveElts().size());
 
     b2 =  BitSetUtils.convertListToSmartBitSet(List.of(2,3,4));
-    acElts.unifyEltIntoAC(b2, 4);     // added
+    acElts.unifyEltIntoAC(b2, 4, 1);     // added
     Assertions.assertEquals(2, acElts.getEltsSize());
     Assertions.assertEquals(2, acElts.getLiveElts().size());
 
     b2 =  BitSetUtils.convertListToSmartBitSet(List.of(1,4));
-    acElts.unifyEltIntoAC(b2, 4);     // added
+    acElts.unifyEltIntoAC(b2, 4, 1);     // added
     Assertions.assertEquals(3, acElts.getEltsSize());
     Assertions.assertEquals(3, acElts.getLiveElts().size());
 
     b2 =  BitSetUtils.convertListToSmartBitSet(List.of(2));
-    acElts.unifyEltIntoAC(b2, 4);     // {2} replaces {1,2,3} and {2,3,4}
+    acElts.unifyEltIntoAC(b2, 4, 1);     // {2} replaces {1,2,3} and {2,3,4}
     Assertions.assertEquals("{2},{1,4},", acElts.toString().replace(" ",""));
     Assertions.assertEquals(2, acElts.getEltsSize());
     Assertions.assertEquals(2, acElts.getLiveElts().size());
@@ -91,7 +91,7 @@ public class ACEltsTest {
     int nNFA = distinctCounter+1;
     ACElts acElts = new ACElts(distinctBitSets.get(0));
     for(SmartBitSet b: distinctBitSets) {
-      acElts.unifyEltIntoAC(b, nNFA);
+      acElts.unifyEltIntoAC(b, nNFA, distinctBitSets.size());
     }
     Assertions.assertEquals(64, acElts.getEltsSize());
     Assertions.assertFalse(acElts.properSubsetExists(SmartBitSet.EMPTY_SMART_BITSET));
@@ -99,18 +99,18 @@ public class ACEltsTest {
     SmartBitSet b2 = (SmartBitSet) distinctBitSets.get(0).clone();
     b2.set(1000); // superset element
     Assertions.assertTrue(acElts.properSubsetExists(b2));
-    acElts.unifyEltIntoAC(b2, nNFA);
+    acElts.unifyEltIntoAC(b2, nNFA, 1);
     Assertions.assertEquals(64, acElts.getEltsSize());
 
     // Unify {0} into acElts.
     // This collapses 32 elements into 1, and creates a large deadElts set.
     b2 = BitSetUtils.convertListToSmartBitSet(List.of(0));
-    acElts.unifyEltIntoAC(b2, nNFA);
+    acElts.unifyEltIntoAC(b2, nNFA, 1);
     Assertions.assertEquals(33, acElts.getEltsSize());
 
     // Add a new element, re-using a deadElt.
     b2 = BitSetUtils.convertListToSmartBitSet(List.of(10,11));
-    acElts.unifyEltIntoAC(b2, nNFA);
+    acElts.unifyEltIntoAC(b2, nNFA, 1);
     Assertions.assertEquals(34, acElts.getEltsSize());
 
     // clear acElts, including inverted index
@@ -135,20 +135,20 @@ public class ACEltsTest {
     int nNFA = distinctCounter+1;
     ACElts acElts = new ACElts(distinctBitSets.get(0));
     for(SmartBitSet b: distinctBitSets) {
-      acElts.unifyEltIntoAC(b, nNFA);
+      acElts.unifyEltIntoAC(b, nNFA, distinctBitSets.size());
     }
 
     // Unify {0} into acElts.
     // This collapses 512 elements into 1, and creates a large deadElts set.
     SmartBitSet b2 = BitSetUtils.convertListToSmartBitSet(List.of(0));
-    acElts.unifyEltIntoAC(b2, nNFA);
+    acElts.unifyEltIntoAC(b2, nNFA, 1);
     Assertions.assertEquals(513, acElts.getEltsSize());
     // exercise iteration over deadElts
     Assertions.assertEquals(513, acElts.getLiveElts().size());
 
     // Add one more element, triggering rebuild
     b2 = BitSetUtils.convertListToSmartBitSet(List.of(20,21));
-    acElts.unifyEltIntoAC(b2, nNFA);
+    acElts.unifyEltIntoAC(b2, nNFA, 1);
     Assertions.assertEquals(514, acElts.getEltsSize());
   }
 }

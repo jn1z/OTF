@@ -1,7 +1,6 @@
 package OTF.Simulation;
 
 import OTF.NFATrim;
-import OTF.PowersetDeterminizer;
 import OTF.TabakovVardiRandomNFA;
 import it.unimi.dsi.fastutil.ints.IntIntImmutablePair;
 import it.unimi.dsi.fastutil.ints.IntIntPair;
@@ -10,6 +9,7 @@ import net.automatalib.alphabet.impl.Alphabets;
 import net.automatalib.automaton.fsa.impl.CompactDFA;
 import net.automatalib.automaton.fsa.impl.CompactNFA;
 import net.automatalib.util.automaton.Automata;
+import net.automatalib.util.automaton.fsa.NFAs;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -176,10 +176,10 @@ public class SimulationTest {
     CompactNFA<Integer> tv = TabakovVardiRandomNFA.generateNFA(new Random(5), 3, 1.3f, 0.5f, alph, CompactNFA::new);
 
     CompactDFA<Integer> oldSCTest, newOTF;
-    oldSCTest = PowersetDeterminizer.determinize(tv, alph, true);
+    oldSCTest = NFAs.determinize(tv, alph);
 
     CompactNFA<Integer> reducedTV = ParallelSimulation.fullyComputeRels(tv, new ArrayList<>(), parallel);
-    newOTF = PowersetDeterminizer.determinize(reducedTV, alph, true);
+    newOTF = NFAs.determinize(reducedTV, alph);
     Assertions.assertEquals(oldSCTest.size(), newOTF.size());
     Assertions.assertTrue(Automata.testEquivalence(oldSCTest, newOTF, alph));
   }

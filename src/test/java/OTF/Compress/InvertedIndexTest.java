@@ -118,7 +118,7 @@ public class InvertedIndexTest {
     List<SmartBitSet> testSet = testSet();
     InvertedIndex st = new InvertedIndex(10, List.of(inputSet.get(0), inputSet.get(1), inputSet.get(2)));
     for(int i=3;i<inputSet.size();i++) {
-      st.insert(inputSet.get(i));
+      st.insert(inputSet.get(i), inputSet.size());
     }
     testSubsetQueryInternal(st, testSet, inputSet);
     testSupersetQueryInternal(st, testSet, inputSet);
@@ -172,7 +172,7 @@ public class InvertedIndexTest {
     Assertions.assertFalse(st.toString().isEmpty());
   }
 
-  public static List<SmartBitSet> findSupersets(InvertedIndex st, List<SmartBitSet> acElts, SmartBitSet deadElts, SmartBitSet b) {
+  private static List<SmartBitSet> findSupersets(InvertedIndex st, List<SmartBitSet> acElts, SmartBitSet deadElts, SmartBitSet b) {
     SmartBitSet supersetIndices = st.findSupersetIndices(acElts, deadElts, b, false);
     List<SmartBitSet> supersets = new ArrayList<>();
     for (int k = supersetIndices.nextSetBit(0); k >= 0; k = supersetIndices.nextSetBit(k + 1)) {

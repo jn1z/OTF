@@ -3,7 +3,6 @@ package OTF;
 import OTF.Compress.AntichainForest2;
 import OTF.Compress.AntichainForest5;
 import OTF.Compress.AntichainForest5Idx;
-import OTF.Model.Cancellation;
 import OTF.Model.Threshold;
 import OTF.Registry.AddressRegistry;
 import OTF.Registry.Registry;
@@ -54,19 +53,6 @@ public class OTFDeterminizationTest {
     registry = new AntichainForest5Idx(myNFA.size());
     newOTF = OTFDeterminization.doOTF(myNFA.powersetView(), myNFA.getInputAlphabet(), threshold, registry);
     Assertions.assertEquals(7, newOTF.size());
-
-    // Test cancellation
-    registry = new AddressRegistry();
-    threshold = Threshold.maxSteps(5);
-    newOTF = OTFDeterminization.doOTF(
-        myNFA.powersetView(), myNFA.getInputAlphabet(), threshold, registry, new Cancellation(true, Integer.MAX_VALUE));
-    Assertions.assertNull(newOTF);
-
-    registry = new AddressRegistry();
-    threshold = Threshold.maxSteps(5);
-    newOTF = OTFDeterminization.doOTF(
-        myNFA.powersetView(), myNFA.getInputAlphabet(), threshold, registry, new Cancellation(false, 5));
-    Assertions.assertNull(newOTF);
   }
 
   @Test

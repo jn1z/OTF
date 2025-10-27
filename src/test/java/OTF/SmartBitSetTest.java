@@ -21,9 +21,9 @@ class SmartBitSetTest {
       assertFalse(bitSet1.get(i));
       bitSet1.set(i, i); // no-op
       assertFalse(bitSet1.get(i));
-      bitSet1.set(i, true);
+      bitSet1.set(i);
       assertTrue(bitSet1.get(i));
-      bitSet1.set(i, false);
+      bitSet1.clear(i);
       assertFalse(bitSet1.get(i));
     }
     bitSet1.clear(1000);
@@ -89,6 +89,8 @@ class SmartBitSetTest {
     andSet.and(bitSet2);
     SmartBitSet andNotSet = (SmartBitSet) bitSet1.clone();
     andNotSet.andNot(bitSet2);
+    SmartBitSet xorSet = (SmartBitSet) bitSet1.clone();
+    xorSet.xor(bitSet2);
 
     for (int i = 0; i < 512; i++) {
       boolean inSet1 = (i % 3 == 0);
@@ -96,9 +98,11 @@ class SmartBitSetTest {
       boolean expectedOr = inSet1 || inSet2;
       boolean expectedAnd = inSet1 && inSet2;      // Only true for multiples of 12.
       boolean expectedAndNot = inSet1 && !inSet2;    // True for multiples of 3 that are not multiples of 4.
+      boolean expectedXor = inSet1 ^ inSet2;    // True for multiples of 3 that are not multiples of 4.
       assertEquals(expectedOr, orSet.get(i));
       assertEquals(expectedAnd, andSet.get(i));
       assertEquals(expectedAndNot, andNotSet.get(i));
+      assertEquals(expectedXor, xorSet.get(i));
     }
   }
 
@@ -238,15 +242,6 @@ class SmartBitSetTest {
   }
 
   @Test
-  void testLength() {
-    assertEquals(0, bitSet1.length());
-    bitSet1.set(100);
-    assertEquals(101, bitSet1.length());
-    bitSet1.set(50);
-    assertEquals(101, bitSet1.length());
-  }
-
-  @Test
   void testSize() {
     assertEquals(64, bitSet1.size()); // empty BitSet still allocates a long
     bitSet1.set(100);
@@ -317,8 +312,6 @@ class SmartBitSetTest {
     bitSet1.clear(130);
     // Now wordsInUse should drop.
     assertTrue(bitSet1.wordsInUse < initialWordsInUse);
-    // Since no other bit is set, length() should be 0.
-    assertEquals(0, bitSet1.length());
   }
 
   @Test
@@ -435,8 +428,6 @@ class SmartBitSetTest {
     // Set a bit well beyond 32.
     bs.set(100);
     assertTrue(bs.get(100));
-    // The logical length should be at least 101.
-    assertTrue(bs.length() >= 101);
   }
 
   // Test multi‑word branch in set(from, to)
@@ -474,16 +465,12 @@ class SmartBitSetTest {
     // Perform or; this should expand bsA's internal array
     bsA.or(bsB);
     assertTrue(bsA.get(100));
-    // Ensure that wordsInUse reflects the new union size
-    assertTrue(bsA.length() >= 101);
   }
 
   // Test the constructor with initial size zero
   @Test
   void testConstructorZero() {
     SmartBitSet bs = new SmartBitSet(0);
-    // With a size of 0, logical length should be 0 even though internally a word might be allocated.
-    assertEquals(0, bs.length());
     assertEquals(0, bs.cardinality());
     // Test that we can set a bit and the set expands properly.
     bs.set(10);

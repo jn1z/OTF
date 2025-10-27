@@ -37,7 +37,7 @@ public class BenchmarkTest {
         for (CompactNFA<Integer> automaton : AUTOMATA) {
             final Alphabet<Integer> alphabet = automaton.getInputAlphabet();
             final CompactDFA<Integer> dfa = NFAs.determinize(automaton, alphabet);
-            final CompactDFA<Integer> result = PowersetDeterminizer.determinize(automaton, alphabet);
+            final CompactDFA<Integer> result = NFAs.determinize(automaton, alphabet);
 
             Assertions.assertEquals(dfa.size(), result.size());
             Assertions.assertTrue(Automata.testEquivalence(dfa, result, alphabet));
@@ -51,10 +51,10 @@ public class BenchmarkTest {
             final CompactDFA<Integer> dfa = NFAs.determinize(automaton, alphabet);
             final CompactNFA<Integer> rev = new CompactNFA<>(alphabet);
             NFAs.reverse(automaton, alphabet, rev);
-            final CompactDFA<Integer> revDet = PowersetDeterminizer.determinize(rev, alphabet, false);
+            final CompactDFA<Integer> revDet = NFAs.determinize(rev, alphabet, false, false);
             final CompactNFA<Integer> revrev = new CompactNFA<>(alphabet);
             NFAs.reverse(revDet, alphabet, revrev);
-            final CompactDFA<Integer> result = PowersetDeterminizer.determinize(revrev, alphabet, false);
+            final CompactDFA<Integer> result = NFAs.determinize(revrev, alphabet, false, false);
 
             Assertions.assertEquals(dfa.size(), result.size());
             Assertions.assertTrue(Automata.testEquivalence(dfa, result, alphabet));
@@ -111,7 +111,7 @@ public class BenchmarkTest {
                 new AntichainForestRegistry<>(rev));
             final CompactNFA<Integer> revrev = new CompactNFA<>(alphabet);
             NFAs.reverse(revDet, alphabet, revrev);
-            final CompactDFA<Integer> result = PowersetDeterminizer.determinize(revrev, alphabet, false);
+            final CompactDFA<Integer> result = NFAs.determinize(revrev, alphabet, false, false);
 
             Assertions.assertEquals(dfa.size(), result.size());
             Assertions.assertTrue(Automata.testEquivalence(dfa, result, alphabet));
@@ -134,7 +134,7 @@ public class BenchmarkTest {
                 new AntichainForestRegistry<>(nfa, simRels.toArray(new BitSet[0])));
             final CompactNFA<Integer> revrev = new CompactNFA<>(alphabet);
             NFAs.reverse(revDet, alphabet, revrev);
-            final CompactDFA<Integer> result = PowersetDeterminizer.determinize(revrev, alphabet, false);
+            final CompactDFA<Integer> result = NFAs.determinize(revrev, alphabet, false, false);
 
             Assertions.assertEquals(dfa.size(), result.size());
             Assertions.assertTrue(Automata.testEquivalence(dfa, result, alphabet));

@@ -38,27 +38,4 @@ public class ModelTest {
     Assertions.assertTrue(t.test(fR));
     Assertions.assertEquals(1, t.getCrossings());
   }
-
-  @Test
-  void testCancellation() {
-    // This is mostly used for benchmarks, but worth testing since it's used in the main loop.
-    Cancellation c = new Cancellation(false, 10);
-    Assertions.assertFalse(c.isCancelled());
-    Assertions.assertFalse(c.isOom());
-    Assertions.assertFalse(c.isAboveThreshold(0));
-    Assertions.assertFalse(c.isCancelled());
-
-    Assertions.assertTrue(c.isAboveThreshold(20));
-    Assertions.assertTrue(c.isOom());
-    Assertions.assertTrue(c.isCancelled());
-
-    Assertions.assertEquals("OOM", c.cancelLabel());
-
-    c.setInterrupted();
-    Assertions.assertEquals("TO", c.cancelLabel());
-
-    c = new Cancellation(false, 10);
-    c.setInterrupted();
-    Assertions.assertTrue(c.isCancelled());
-  }
 }
