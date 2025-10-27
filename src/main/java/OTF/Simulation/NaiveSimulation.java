@@ -8,7 +8,14 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 
-public class NaiveSimulation {
+public final class NaiveSimulation {
+  private static final int PAR_STATES = 800;
+  private static final int PAR_WORK = 15000; // approx nStates * nSymbols
+
+  private static <I> boolean shouldParallelize(int nStates, int nSymbols) {
+    return nStates >= PAR_STATES || nStates * nSymbols >= PAR_WORK;  // proxy for work ~ n * |Σ|
+  }
+
   /**
    * Compute direct/forward simulation (with acceptance criteria) of an NFA.
    * Adapted from RABIT, see https://languageinclusion.org/doku.php?id=tools
@@ -20,6 +27,7 @@ public class NaiveSimulation {
       CompactNFA<I> nfa, boolean withAcceptance, boolean parallel) {
     final int nStates = nfa.size();
     final int nSymbols = nfa.getInputAlphabet().size();
+    final boolean shouldParallelize = parallel && shouldParallelize(nStates, nSymbols);
 
     // For performance, we store final states in a boolean[], rather than querying from a FixedBitSet
     final boolean[] isFinalArray = buildFinalArr(nfa, nStates);
@@ -28,21 +36,21 @@ public class NaiveSimulation {
     final int[][][] succ = createSuccArr(nfa, nSymbols, nStates);
 
     // If relation[p].get(q) is true, then (p,q) is in the current relation.
-    FixedBitSet[] relation = new FixedBitSet[nStates];
+    final FixedBitSet[] relation = new FixedBitSet[nStates];
     for (int p = 0; p < nStates; p++) {
       relation[p] = new FixedBitSet(nStates);
     }
 
     initializeRelation(isFinalArray, relation, nSymbols, succ, withAcceptance);
 
-    refineRelation(nSymbols, succ, relation, parallel);
+    refineRelation(nSymbols, succ, relation, shouldParallelize);
 
     return collectRelation(relation);
   }
 
   // Create a boolean array of final states
   private static <I> boolean[] buildFinalArr(CompactNFA<I> nfa, int nStates) {
-    boolean[] isFinal = new boolean[nStates];
+    final boolean[] isFinal = new boolean[nStates];
     for (int i = 0; i < nStates; i++) {
       if (nfa.isAccepting(i)) {
         isFinal[i] = true;
@@ -61,7 +69,7 @@ public class NaiveSimulation {
 
     for (int p = 0; p < nStates; p++) {
       for (int a = 0; a < nSymbols; a++) {
-        Set<Integer> transitions = nfa.getTransitions(p, a);
+        final Set<Integer> transitions = nfa.getTransitions(p, a);
         if (transitions != null && !transitions.isEmpty()) {
           succ[a][p] = new int[transitions.size()];
           int idx = 0;
@@ -87,26 +95,33 @@ public class NaiveSimulation {
       int nSymbols,
       int[][][] succ,
       boolean withAcceptance) {
-    final int nStates = relation.length;
-    for (int p = 0; p < nStates; p++) {
-      boolean finalP = isFinal[p];
-      FixedBitSet relationP = relation[p];
-      for (int q = 0; q < nStates; q++) {
-        // With acceptance criteria: if q simulates p and p is final, q must be final
-        if (withAcceptance && (finalP && !isFinal[q])) {
-          continue;
-        }
+    final int n = relation.length;
+    // finals bitset
+    final FixedBitSet finals = new FixedBitSet(n);
+    for (int q = 0; q < n; q++) if (isFinal[q]) finals.set(q);
 
-        boolean setPQ = true;
-        // If p has transitions on symbol s, but q has none, then q does not simulate p; remove
-        for (int s = 0; s < nSymbols; s++) {
-          if (succ[s][p].length > 0 && succ[s][q].length == 0) {
-            setPQ = false;
-            break;
-          }
-        }
-        if (setPQ) {
-          relationP.set(q);
+    // per-symbol: states with NO outgoing on that symbol
+    final FixedBitSet[] noOut = new FixedBitSet[nSymbols];
+    for (int a = 0; a < nSymbols; a++) {
+      final FixedBitSet bs = noOut[a] = new FixedBitSet(n);
+      final int[][] succA = succ[a];
+      for (int q = 0; q < n; q++) {
+        if (succA[q].length == 0) bs.set(q);
+      }
+    }
+
+    // row-wise bit-parallel init
+    for (int p = 0; p < n; p++) {
+      final FixedBitSet rp = relation[p];
+      rp.setAll(); // start as universal relation for this row
+      if (withAcceptance && isFinal[p]) {
+        // if p is final, only final q are allowed
+        rp.and(finals);
+      }
+      // if p has an 'a'-edge, remove all q that lack an 'a'-edge
+      for (int a = 0; a < nSymbols; a++) {
+        if (succ[a][p].length > 0) {
+          rp.andNot(noOut[a]); // drop all q with no 'a' from this row
         }
       }
     }
@@ -137,7 +152,7 @@ public class NaiveSimulation {
                                  int nSymbols, int[][][] succ, FixedBitSet[] relation) {
     boolean changed = false;
     for (int p = pStart; p < pEnd; p++) {
-      FixedBitSet relationP = relation[p];
+      final FixedBitSet relationP = relation[p];
       for (int q = relationP.nextSetBit(qStart); q >= 0 && q < qEnd; q = relationP.nextSetBit(q + 1)) {
         // If (p,q) is in relation, check if it fails
         if (failsSimulation(p, q, nSymbols, succ, relation)) {
@@ -153,10 +168,10 @@ public class NaiveSimulation {
   private static boolean failsSimulation(
       int p, int q, int nSymbols, int[][][] succ, FixedBitSet[] relation) {
     for (int a = 0; a < nSymbols; a++) {
-      int[] nextP = succ[a][p];
+      final int[] nextP = succ[a][p];
       if (nextP.length > 0) {
         // If p has transitions on a, q must also have transitions on a
-        int[] nextQ = succ[a][q];
+        final int[] nextQ = succ[a][q];
         if (nextQ.length == 0) {
           return true;
         }
@@ -173,7 +188,7 @@ public class NaiveSimulation {
   private static boolean noMatchingTransition(int[] nextP, int[] nextQ, FixedBitSet[] relation) {
     for (int r : nextP) {
       boolean foundMatch = false;
-      FixedBitSet relationR = relation[r];
+      final FixedBitSet relationR = relation[r];
       for (int t : nextQ) {
         if (relationR.get(t)) {
           foundMatch = true;
@@ -190,9 +205,9 @@ public class NaiveSimulation {
 
   // Collect final (p,q) pairs
   private static Set<IntIntPair> collectRelation(FixedBitSet[] relation) {
-    Set<IntIntPair> pairs = new HashSet<>();
+    final Set<IntIntPair> pairs = new HashSet<>();
     for (int p = 0; p < relation.length; p++) {
-      FixedBitSet relationP = relation[p];
+      final FixedBitSet relationP = relation[p];
       for (int q = relationP.nextSetBit(0); q >= 0; q = relationP.nextSetBit(q + 1)) {
         pairs.add(new IntIntImmutablePair(p, q));
       }

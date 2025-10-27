@@ -5,61 +5,93 @@ import OTF.Registry.AntichainForestRegistry;
 import OTF.Registry.Registry;
 import OTF.Simulation.ParallelSimulation;
 import net.automatalib.alphabet.Alphabet;
+import net.automatalib.alphabet.impl.Alphabets;
 import net.automatalib.automaton.fsa.DFA;
 import net.automatalib.automaton.fsa.impl.CompactDFA;
 import net.automatalib.automaton.fsa.impl.CompactNFA;
+import net.automatalib.serialization.ba.BAWriter;
 import net.automatalib.util.automaton.Automata;
+import net.automatalib.util.automaton.fsa.NFAs;
 import net.automatalib.util.automaton.minimizer.HopcroftMinimizer;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.List;
 
 public class OTFCommandLine {
   public static void main(String[] args) {
-    boolean testAgainstSC = args.length == 3 && "--sanity-check".equalsIgnoreCase(args[0]);
-    boolean validInvocation = args.length == 2 || (args.length == 3 && testAgainstSC);
-    if (!validInvocation) {
-      System.out.println(
-          "OTF [--sanity-check] <algorithm> <BA file>");
-      System.out.println("[--sanity-check] : Verifies algorithm against generic SC algorithm.");
-      System.out.println();
-      System.out.println("<algorithm> : one of the choices below:");
-      System.out.println("  CCL: OTF's Convexity Closure Lattice algorithm.");
-      System.out.println("  CCLS: OTF's Convexity Closure Lattice algorithm, with simulation enhancement.");
+    String filename = null;
+    List<String> positional = new ArrayList<>(2);
 
-      System.out.println("  SC: Subset Construction.");
-      System.out.println("  SCS: Subset Construction with simulation enhancement. Similar to Glabbeek-Ploeger's SUBSET(close c=).");
-
-      System.out.println("  BRZ: Brzozowski's double-reversal algorithm.");
-      System.out.println("  BRZS: Brzozowski's double-reversal algorithm with simulation enhancement.");
-
-      System.out.println("  BRZ-CCL: Brzozowski's double-reversal algorithm, using CCL in step 1.");
-      System.out.println("  BRZ-CCLS: Brzozowski's double-reversal algorithm, using CCLS in step 1.");
-
-      System.out.println();
-      System.out.println("<BA file> : finite automaton (in the BA format).");
-      System.out.println("  BA format described here: https://languageinclusion.org/doku.php?id=tools");
-      System.exit(0);
+    for (int i = 0; i < args.length; i++) {
+      String arg = args[i];
+      if ("--debug".equalsIgnoreCase(arg)) {
+        OTFDeterminization.DEBUG = true;
+      } else if ("--writeBA".equalsIgnoreCase(arg)) {
+        // Require a value that isn't another flag
+        if (i + 1 >= args.length || args[i + 1].startsWith("-")) {
+          System.err.println("Missing value for --filename");
+          printUsageAndExit(); // exits
+        }
+        filename = args[++i]; // consume the value
+      } else if (arg.startsWith("-")) {
+        // Unknown flag
+        printUsageAndExit();
+      } else {
+        positional.add(arg);
+      }
     }
 
-    int baseIndex = testAgainstSC ? 1 : 0;
+    boolean validInvocation = (positional.size() == 2);
+    if (!validInvocation) {
+      printUsageAndExit();
+    }
 
-    String filePath = args[1 + baseIndex];
-    CompactNFA<Integer> origNFA = BAFormat.getBAFile(filePath);
+    String algorithm = positional.get(0);
+    String filePath  = positional.get(1);
+
+    final CompactNFA<Integer> origNFA = BAFormat.getBAFile(filePath);
     System.out.println("Original NFA size: " + origNFA.size());
     System.out.println("Alphabet size:" + origNFA.getInputAlphabet().size());
 
-    String algorithm = args[baseIndex];
     long before = System.currentTimeMillis();
-    DFA<?, Integer> returnedDFA = allAlgorithms(algorithm, origNFA);
+    CompactDFA<Integer> returnedDFA = allAlgorithms(algorithm, origNFA);
     long after = System.currentTimeMillis();
     System.out.println(algorithm + " minimized DFA size: " + returnedDFA.size());
     System.out.println(algorithm + " duration: " + ((after - before) / 1000f) + "s");
 
-    if (testAgainstSC) {
-      testAgainstSC(origNFA, returnedDFA);
+    if (filename != null) {
+      writeBAFile(filename, returnedDFA);
     }
+  }
+
+  private static void printUsageAndExit() {
+    System.out.println(
+        "OTF [--debug] [--writeBA <BA output file>] <algorithm> <BA input file>");
+    System.out.println("[--debug] : Additional debug/progress output");
+    System.out.println("[--writeBA <BA output file> : Write DFA to specified output file");
+    System.out.println();
+    System.out.println("<algorithm> : one of the choices below:");
+    System.out.println("  CCL: OTF's Convexity Closure Lattice algorithm.");
+    System.out.println("  CCLS: OTF's Convexity Closure Lattice algorithm, with simulation enhancement.");
+
+    System.out.println("  SC: Subset Construction.");
+    System.out.println("  SCS: Subset Construction with simulation enhancement. Similar to Glabbeek-Ploeger's SUBSET(close c=).");
+
+    System.out.println("  BRZ: Brzozowski's double-reversal algorithm.");
+    System.out.println("  BRZS: Brzozowski's double-reversal algorithm with simulation enhancement.");
+
+    System.out.println("  BRZ-CCL: Brzozowski's double-reversal algorithm, using CCL in step 1.");
+    System.out.println("  BRZ-CCLS: Brzozowski's double-reversal algorithm, using CCLS in step 1.");
+
+    System.out.println();
+    System.out.println("<BA file> : finite automaton (in the BA format).");
+    System.out.println("  BA format described here: https://languageinclusion.org/doku.php?id=tools");
+    System.exit(0);
   }
 
   /**
@@ -68,7 +100,7 @@ public class OTFCommandLine {
    * @param origNFA - original NFA
    * @return - determinized and minimized DFA.
    */
-  public static CompactDFA<Integer> allAlgorithms(String algorithm, CompactNFA<Integer> origNFA) {
+  private static CompactDFA<Integer> allAlgorithms(String algorithm, CompactNFA<Integer> origNFA) {
     System.out.println();
     System.out.println("Invoking algorithm:" + algorithm);
     String basicAlgorithm = algorithm.toLowerCase();
@@ -92,19 +124,20 @@ public class OTFCommandLine {
      * @return minimized DFA
      */
   public static CompactDFA<Integer> CCL(CompactNFA<Integer> origNFA, boolean simulate) {
-    final Alphabet<Integer> alphabet = origNFA.getInputAlphabet();
-
-    final Threshold threshold = Threshold.adaptiveSteps(4000);
+    final Threshold threshold = Threshold.adaptiveSteps(Threshold.DEFAULT_THRESHOLD_SIZE);
 
     CompactNFA<Integer> reducedNFA = trimAndBisim(origNFA);
+    origNFA.clear(); // GC hint
+    final Alphabet<Integer> alphabet = reducedNFA.getInputAlphabet();
 
     ArrayList<BitSet> simRels = new ArrayList<>();
     reducedNFA = generateSimRels(simulate, reducedNFA, simRels);
 
     Registry registry = new AntichainForestRegistry<>(reducedNFA, simRels.toArray(new BitSet[0]));
+    simRels.clear(); // GC
 
-    DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(reducedNFA.powersetView(), alphabet, threshold, registry);
-    CompactDFA<Integer> minimizedDFA = HopcroftMinimizer.minimizeDFA(otfDFA, alphabet);
+    final DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(reducedNFA.powersetView(), alphabet, threshold, registry);
+    final CompactDFA<Integer> minimizedDFA = HopcroftMinimizer.minimizeDFA(otfDFA, alphabet);
 
     System.out.println("CCL max intermediate count: " + registry.getMaxIntermediateCount());
     System.out.println("CCL threshold crossings: " + threshold.getCrossings());
@@ -122,12 +155,16 @@ public class OTFCommandLine {
    */
   private static CompactDFA<Integer> Brz(CompactNFA<Integer> origNFA, boolean OTF, boolean simulate) {
     long before = System.currentTimeMillis();
-    CompactNFA<Integer> reversedNFA = NFATrim.reverse(origNFA, CompactNFA::new);
+    final CompactNFA<Integer> reversedNFA = NFATrim.reverse(origNFA, CompactNFA::new);
     long after = System.currentTimeMillis();
     System.out.println("reverse time: " + ((after - before) / 1000f) + "s");
 
-    CompactDFA<Integer> brz1DFA = BrzStep1(OTF, reversedNFA, simulate);
-    CompactDFA<Integer> brz2DFA = BrzStep2(brz1DFA, reversedNFA.getInputAlphabet());
+    Alphabet<Integer> reversedNFAAlphabet = reversedNFA.getInputAlphabet();
+    Alphabet<Integer> newAlphabet = Alphabets.integers(0,reversedNFAAlphabet.size()-1);
+    // this allows reversedNFA to be GC'ed earlier
+
+    final CompactDFA<Integer> brz1DFA = BrzStep1(OTF, reversedNFA, simulate);
+    final CompactDFA<Integer> brz2DFA = BrzStep2(brz1DFA, newAlphabet);
 
     return brz2DFA;
   }
@@ -137,14 +174,13 @@ public class OTFCommandLine {
    */
   private static CompactDFA<Integer> BrzStep1(boolean OTF, CompactNFA<Integer> reversedNFA, boolean simulate) {
     long before = System.currentTimeMillis();
-    Alphabet<Integer> alphabet = reversedNFA.getInputAlphabet();
 
     CompactDFA<Integer> brz1DFA;
     if (OTF) {
       brz1DFA = CCL(reversedNFA, simulate);
     } else {
-      CompactNFA<Integer> reducedNFA = trimAndBisim(reversedNFA);
-      brz1DFA = doSCInternal(simulate, reducedNFA, alphabet, "powerset DFA (BRZ step 1):");
+      final CompactNFA<Integer> reducedNFA = trimAndBisim(reversedNFA);
+      brz1DFA = doSCInternal(simulate, reducedNFA, reducedNFA.getInputAlphabet(), "powerset DFA (BRZ step 1):");
     }
     long after = System.currentTimeMillis();
     System.out.println("Minimized BRZ step 1 size: " + brz1DFA.size());
@@ -157,9 +193,8 @@ public class OTFCommandLine {
    */
   private static CompactDFA<Integer> BrzStep2(CompactDFA<Integer> brz1, Alphabet<Integer> alphabet) {
     long before = System.currentTimeMillis();
-    CompactDFA<Integer> brz2DFA;
-    CompactNFA<Integer> rev2 = NFATrim.reverse(brz1, alphabet);
-    brz2DFA = PowersetDeterminizer.determinize(rev2, alphabet, false);
+    final CompactNFA<Integer> rev2 = NFATrim.reverse(brz1, alphabet);
+    final CompactDFA<Integer> brz2DFA = NFAs.determinize(rev2, alphabet, false, false);
     long after = System.currentTimeMillis();
     System.out.println("BRZ step 2 duration: " + ((after - before) / 1000f) + "s");
     return brz2DFA;
@@ -173,13 +208,12 @@ public class OTFCommandLine {
    * @param simulate - whether to simulation reduce and use simulation relations.
    * @return - minimized DFA
    */
-  private static CompactDFA<Integer> SC(CompactNFA<Integer> origNFA, boolean trimAndBisim, boolean simulate) {
-    Alphabet<Integer> alphabet = origNFA.getInputAlphabet();
+  private static CompactDFA<Integer> SC(final CompactNFA<Integer> origNFA, boolean trimAndBisim, boolean simulate) {
     CompactNFA<Integer> newNFA = origNFA;
     if (trimAndBisim) {
       newNFA = trimAndBisim(origNFA);
     }
-    return doSCInternal(simulate, newNFA, alphabet, "Unminimized SC DFA size:");
+    return doSCInternal(simulate, newNFA, newNFA.getInputAlphabet(), "Unminimized SC DFA size:");
   }
 
   private static CompactDFA<Integer> doSCInternal(boolean simulate, CompactNFA<Integer> nfa, Alphabet<Integer> alphabet, String powersetOutput) {
@@ -188,11 +222,12 @@ public class OTFCommandLine {
       ArrayList<BitSet> simRels = new ArrayList<>();
       nfa = generateSimRels(true, nfa, simRels);
       Registry registry = new AntichainForestRegistry<>(nfa, simRels.toArray(new BitSet[0]));
-      DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(nfa.powersetView(), alphabet, Threshold.noop(), registry);
+      simRels.clear(); // GC
+      final DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(nfa.powersetView(), alphabet, Threshold.noop(), registry);
       System.out.println(powersetOutput + otfDFA.size());
       dfa = HopcroftMinimizer.minimizeDFA(otfDFA, alphabet);
     } else {
-      dfa = PowersetDeterminizer.determinize(nfa, alphabet, false);
+      dfa = NFAs.determinize(nfa, alphabet, false, false);
       System.out.println(powersetOutput + dfa.size());
       dfa = HopcroftMinimizer.minimizeDFA(dfa, alphabet);
     }
@@ -204,7 +239,7 @@ public class OTFCommandLine {
    * @param origNFA - original NFA
    * @return reduced NFA
    */
-  private static CompactNFA<Integer> trimAndBisim(CompactNFA<Integer> origNFA) {
+  private static CompactNFA<Integer> trimAndBisim(final CompactNFA<Integer> origNFA) {
       int prevSize = origNFA.size();
       long before = System.currentTimeMillis();
 
@@ -253,31 +288,17 @@ public class OTFCommandLine {
           System.out.println("Sim altered to: " + reducedNFA.size() + " states");
       }
       long after = System.currentTimeMillis();
-      System.out.println("sim time: " + ((after - before) / 1000f) + "s");;
+      System.out.println("sim time: " + ((after - before) / 1000f) + "s");
       return reducedNFA;
   }
 
-  /**
-   * Sanity check -- verify that algorithm matches what's generated by SC.
-   * @param origNFA - original NFA
-   * @param newDFA - minimized DFA generated by other method
-   */
-  private static void testAgainstSC(CompactNFA<Integer> origNFA, DFA<?, Integer> newDFA) {
-    System.out.println();
-    System.out.println("Running sanity check against SC");
-    CompactDFA<Integer> scDFA = SC(origNFA, false, false);
-    System.out.println("SC minimized size:" + scDFA.size());
-    if (scDFA.size() != newDFA.size()) {
-      if (Math.abs(scDFA.size() - newDFA.size()) != 1) {
-        throw new IllegalStateException("Sizes not equal.");
-      } else {
-        System.out.println("WARNING: Sizes off by one: might be a totalization issue, fixed with full canonicalization.");
-      }
-    }
-    if (!Automata.testEquivalence(scDFA, newDFA, origNFA.getInputAlphabet())) {
-      throw new IllegalStateException("Determinized automaton not canonical.");
-    } else {
-      System.out.println("Automata verified as equivalent.");
+  private static void writeBAFile(String filename, CompactDFA<Integer> dfa) {
+    System.out.println("Writing to file: " + filename);
+    BAWriter<Integer> baWriter = new BAWriter<>();
+    try (OutputStream os = new FileOutputStream(filename)) {
+      baWriter.writeModel(os, dfa, dfa.getInputAlphabet());
+    } catch (IOException e) {
+      throw new RuntimeException(e);
     }
   }
 }

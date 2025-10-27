@@ -4,35 +4,50 @@ import java.util.*;
 
 import OTF.*;
 import OTF.Registry.Registry;
-import net.automatalib.automaton.fsa.impl.CompactNFA;
+import net.automatalib.automaton.fsa.NFA;
 
 /**
  * Antichain Disjoint-Set Forest, representing equivalence classes.
  * 1-element equivalence classes are simply represented as BitSets <-> ints.
  * Larger equivalence classes are represented by ACPlus elements.
  */
-public class AntichainForest {
+public final class AntichainForest {
     public ACGlobals acG;
     public static final int MISSING_ELEMENT = Registry.MISSING_ELEMENT;
     public int curIntermediateCount = 0; // used for metrics
     public int maxIntermediateCount = 0; // used for metrics
 
-    public AntichainForest(CompactNFA<Integer> nfa, BitSet[] simSupers) {
+    public AntichainForest(NFA<?, Integer> nfa, BitSet[] simSupers) {
         this.acG = new ACGlobals(nfa.size(), simSupers);
     }
 
     public void compress() {
         // Rebuild an inverted index for the AC Unions.
-        // This could be more efficient, but compress() is called relatively rarely
-        acG.searchableACsList = new ACPlus[acG.getAllACs().size()];
+
+        // first, save peak memory
+        acG.searchableACsList = null;
         acG.searchableACsUnions.clear();
-        int index = 0;
-        for(ACPlus acPlus: acG.getAllACs()) {
+        acG.ACsInvertedIndex.clear();
+
+        final List<ACPlus> nextACs = new ArrayList<>(acG.getAllACs().size());
+        // inverted-index ACs first
+        for (ACPlus acPlus : acG.getAllACs()) {
             if (acPlus.searchable) {
-                acG.searchableACsUnions.add(acPlus.acUnion);
-                acG.searchableACsList[index++] = acPlus;
+                nextACs.add(acPlus);
             }
         }
+        // Note: here we don't ignore dead elts. They're useful to indicate complexity of InvertedIndex.
+        // TODO: Another option would be adding a "hit count", and sort by that (also an extra searchable condition)
+        nextACs.sort(Comparator.<ACPlus>comparingInt(a -> a.acElts.elts.size()).reversed()
+                .thenComparingInt(ACPlus::getStateId));  // stable tiebreak
+
+        int index = 0;
+        acG.searchableACsList = new ACPlus[nextACs.size()];
+        for (ACPlus acPlus: nextACs) {
+            acG.searchableACsUnions.add(acPlus.acUnion);
+            acG.searchableACsList[index++] = acPlus;
+        }
+        nextACs.clear(); // hint to save peak memory
         acG.ACsInvertedIndex = new InvertedIndex(acG.nNFA, acG.searchableACsUnions);
     }
 
@@ -48,30 +63,37 @@ public class AntichainForest {
         if (this.curIntermediateCount > this.maxIntermediateCount) {
             this.maxIntermediateCount = this.curIntermediateCount;
         }
-        SmartBitSet newElt = pruneEltWithSims(SmartBitSet.valueOf(newEltFull.toLongArray()));
-        acG.put(newElt, newState);
+        final SmartBitSet smartEltFull = SmartBitSet.valueOf(newEltFull.toLongArray());
+        final SmartBitSet newElt = acG.simAccelerate.shouldAccelerate ?
+            acG.simAccelerate.pruneEltWithSims(smartEltFull) : smartEltFull;
+
+        // Add a 1-element equivalence class. Larger equivalence classes are added in unify.
+        acG.stateIdToSingleEquiv.put(newState, newElt);
+        acG.singleEquivToStateId.put(newElt, newState);
     }
 
     /**
      * Get BitSet equivalence class (state), otherwise return MISSING_ELEMENT.
      */
     public int get(BitSet eltFull) {
-        SmartBitSet prunedElt = pruneEltWithSims(SmartBitSet.valueOf(eltFull.toLongArray()));
+        final SmartBitSet smartEltFull = SmartBitSet.valueOf(eltFull.toLongArray());
+        final SmartBitSet prunedElt = acG.simAccelerate.shouldAccelerate ?
+            acG.simAccelerate.pruneEltWithSims(smartEltFull) : smartEltFull;
 
         // Check 1-element equivalence classes first
-        int singleEquivState = acG.singleEquivToStateId.getInt(prunedElt);
+        final int singleEquivState = acG.singleEquivToStateId.getInt(prunedElt);
         if (singleEquivState != MISSING_ELEMENT) {
             return singleEquivState;
         }
 
         // Check AC equivalence classes
         // First, we search the foundSets
-        ACPlus foundAC = acG.foundSets.get(prunedElt);
+        final ACPlus foundAC = acG.foundSets.get(prunedElt);
         if (foundAC != null) {
             return foundAC.getStateId();
         }
 
-        return find(SmartBitSet.valueOf(prunedElt.words));
+        return find(prunedElt);
     }
 
     /**
@@ -86,12 +108,13 @@ public class AntichainForest {
 
         // Find all unions that are supersets of this element
         // This is just an approximate filter -- we might find extras
-        SmartBitSet potentialSupersets = acG.ACsInvertedIndex.findSupersetIndices(
+        final SmartBitSet potentialSupersets = acG.ACsInvertedIndex.findSupersetIndices(
             acG.searchableACsUnions, SmartBitSet.EMPTY_SMART_BITSET, prunedElt, true);
 
         if (!potentialSupersets.isEmpty()) {
             // Saturate sElt to use in step 2
-            SmartBitSet saturatedElt = saturateEltWithSims(prunedElt);
+            final SmartBitSet saturatedElt = acG.simAccelerate.shouldAccelerate ?
+                acG.simAccelerate.saturateEltWithSims(prunedElt) : prunedElt;
 
             // For each AC found above:
             // 1. validate its union is an actual superset
@@ -99,15 +122,15 @@ public class AntichainForest {
             //    (if it was equal, it would have been found in caches earlier)
             for (int i = potentialSupersets.nextSetBit(0); i >= 0; i = potentialSupersets.nextSetBit(i + 1)) {
                 // Step 1
-                SmartBitSet acUnion = acG.searchableACsUnions.get(i);
+                final SmartBitSet acUnion = acG.searchableACsUnions.get(i);
                 if (!prunedElt.isSubset(acUnion)) {
                     continue;
                 }
 
                 // Step 2
-                ACPlus acPlus = acG.searchableACsList[i];
+                final ACPlus acPlus = acG.searchableACsList[i];
                 if (acPlus.acElts.properSubsetExists(saturatedElt)) {
-                    acG.addToFoundSets(acPlus, List.of(prunedElt)); // cache for the next search
+                    acG.addToFoundSets(acPlus, prunedElt); // cache for the next search
                     return acPlus.getStateId();
                 }
             }
@@ -121,15 +144,17 @@ public class AntichainForest {
      * This looks complex, but mostly it's just handling 1-element equivalence classes differently.
      */
     public void unify(int primary, BitSet secondaries) {
+        // TODO: consider unifying small ACs first, rather than testing everything against the largest AC.
+        //   (Testing seems to show that small unifies are slower, though.)
         // Find out if these represent 1-element classes or ACs.
-        SmartBitSet primaryElt = acG.stateIdToSingleEquiv.remove(primary);
+        final SmartBitSet primaryElt = acG.stateIdToSingleEquiv.remove(primary);
         ACPlus primaryAC = acG.getACPlus(primary, primaryElt);
 
         int tempIntermediateCount = -(primaryAC == null ? 1 : primaryAC.acElts.getEltsSize());
 
-        int maxSize = secondaries.cardinality();
-        List<ACPlus> secondaryACs = new ArrayList<>(maxSize); // ACs to be unified
-        List<SmartBitSet> secondaryEltsWithoutAC = new ArrayList<>(maxSize); // 1-elts to be unified
+        final int maxSize = secondaries.cardinality();
+        final List<ACPlus> secondaryACs = new ArrayList<>(maxSize); // ACs to be unified
+        final List<SmartBitSet> secondaryEltsWithoutAC = new ArrayList<>(maxSize); // 1-elts to be unified
         tempIntermediateCount = determineSecondaryACsandElts(
             secondaries, tempIntermediateCount, secondaryEltsWithoutAC, secondaryACs);
 
@@ -137,7 +162,11 @@ public class AntichainForest {
         for (ACPlus secondaryAC: secondaryACs) {
             eltsToUnifySize += secondaryAC.acElts.getEltsSize();
         }
-        List<SmartBitSet> eltsToUnify = new ArrayList<>(eltsToUnifySize + 1);
+
+        // determine this before we clear all of the secondary AC unions
+        SmartBitSet newUnion = newUnion(secondaryACs, secondaryEltsWithoutAC);
+
+        final List<SmartBitSet> eltsToUnify = new ArrayList<>(eltsToUnifySize + 1);
         eltsToUnify.addAll(secondaryEltsWithoutAC);
         primaryAC = determineOrCreatePrimaryAC(primary, primaryAC, secondaryACs, primaryElt, eltsToUnify);
 
@@ -145,9 +174,30 @@ public class AntichainForest {
 
         unifyEltsIntoPrimaryAC(eltsToUnify, primaryAC);
 
+        updateACUnion(primaryAC, newUnion);
+
         tempIntermediateCount += primaryAC.acElts.getEltsSize();
 
         this.curIntermediateCount += tempIntermediateCount; // no need to check max value
+    }
+
+    private void updateACUnion(ACPlus primaryAC, SmartBitSet newUnion) {
+        final int previousUnionCardinality = primaryAC.acUnion.cardinality();
+        primaryAC.unionOr(newUnion);
+        // saturate is relatively slow; only do once per unify and only on change
+        if (acG.simAccelerate.shouldAccelerate && primaryAC.acUnion.cardinality() > previousUnionCardinality) {
+            primaryAC.unionOr(acG.simAccelerate.saturateEltWithSims(primaryAC.acUnion));
+        }
+    }
+    private SmartBitSet newUnion(List<ACPlus> secondaryACs, List<SmartBitSet> secondaryEltsWithoutAC) {
+        final SmartBitSet newUnion = new SmartBitSet();
+        for (ACPlus secondaryAC: secondaryACs) {
+            newUnion.or(secondaryAC.acUnion);
+        }
+        for (SmartBitSet secondaryEltWithoutAC : secondaryEltsWithoutAC) {
+            newUnion.or(secondaryEltWithoutAC);
+        }
+        return newUnion;
     }
 
     /**
@@ -157,15 +207,12 @@ public class AntichainForest {
         eltsToUnify.sort(SmartBitSet.SMART_CARDINALITY_COMPARATOR);
         // sorted, so smallest (most impactful) elements are unified first
 
-        int previousUnionCardinality = primaryAC.acUnion.cardinality();
-        for (SmartBitSet eltToUnify: eltsToUnify) {
-            if (primaryAC.acElts.unifyEltIntoAC(eltToUnify, acG.nNFA)) {
-                primaryAC.unionOr(eltToUnify); // update the union
-            }
+        int sizeHint = eltsToUnify.size(); // performance hint
+        if (primaryAC.acElts.invertedIndex != null) {
+            sizeHint += primaryAC.acElts.invertedIndex.maxElts;
         }
-        // saturate is relatively slow; only do once per unify and only on change
-        if (primaryAC.acUnion.cardinality() > previousUnionCardinality) {
-            primaryAC.unionOr(this.saturateEltWithSims(primaryAC.acUnion));
+        for (SmartBitSet eltToUnify: eltsToUnify) {
+            primaryAC.acElts.unifyEltIntoAC(eltToUnify, acG.nNFA, sizeHint);
         }
 
         primaryAC.determineSearchable();
@@ -189,7 +236,7 @@ public class AntichainForest {
                 determineSecondaryACEltsToUnify(primary, secondaryACs, eltsToUnify, primaryAC, 1);
             }
             acG.stateIdToAC.put(primary, primaryAC);
-            acG.addToFoundSets(primaryAC, List.of(primaryElt));
+            acG.addToFoundSets(primaryAC, primaryElt);
         } else {
             // determine secondary AC elts to unify
             determineSecondaryACEltsToUnify(primary, secondaryACs, eltsToUnify, primaryAC, 0);
@@ -200,9 +247,9 @@ public class AntichainForest {
     private int determineSecondaryACsandElts(
         BitSet secondaries, int tempIntermediateCount, List<SmartBitSet> secondaryEltsWithoutAC, List<ACPlus> secondaryACs) {
         for (int k = secondaries.nextSetBit(0); k >= 0; k = secondaries.nextSetBit(k + 1)) {
-            SmartBitSet secondaryElt = acG.stateIdToSingleEquiv.remove(k);
-            ACPlus secondaryAC = acG.getACPlus(k, secondaryElt);
-            int secondaryEltsSize = secondaryAC == null ? 0 : secondaryAC.acElts.getEltsSize();
+            final SmartBitSet secondaryElt = acG.stateIdToSingleEquiv.remove(k);
+            final ACPlus secondaryAC = acG.getACPlus(k, secondaryElt);
+            final int secondaryEltsSize = secondaryAC == null ? 0 : secondaryAC.acElts.getEltsSize();
             tempIntermediateCount -= (secondaryAC == null ? 1 :secondaryEltsSize);
             if (secondaryAC == null) {
                 secondaryEltsWithoutAC.add(secondaryElt);
@@ -217,7 +264,7 @@ public class AntichainForest {
         int primary, List<ACPlus> secondaryACs, List<SmartBitSet> eltsToUnify, ACPlus primaryAC, int start) {
         int secondarySize = secondaryACs.size();
         for (int i = start; i < secondarySize; i++) {
-            ACPlus secondaryAC = secondaryACs.get(i);
+            final ACPlus secondaryAC = secondaryACs.get(i);
             eltsToUnify.addAll(secondaryAC.acElts.getLiveElts());
             // Clear or point to primary AC
             acG.pointToPrimary(primaryAC, secondaryAC);
@@ -228,96 +275,6 @@ public class AntichainForest {
 
     public int size() {
         return acG.singleEquivToStateId.size() + acG.foundSets.size();
-    }
-
-    /**
-     * Remove appropriate subset elements from bitset.
-     * Similar to "transition pruning".
-     * E.g., if {1} == {1,2}, then if the bitset contains {1}, we can remove {2}.
-     * Cached in prunedMap for performance.
-     * Used in get and put.
-     */
-    public SmartBitSet pruneEltWithSims(SmartBitSet b) {
-        if (acG.prunedMap == null) {
-            return b; // simulation is turned off
-        }
-        // Calculate all potentially prunable elements of b
-        // Check if b contains any elements that are marked as potential redundant subsets (subsetStates)
-        // and also if it contains any supersets (supersetStates) that imply redundancy.
-        // If b doesn't intersect both of these, then there is nothing to prune.
-        if (!b.intersects(acG.subsetStates) || !b.intersects(acG.supersetStates)) {
-            return b;
-        }
-
-        SmartBitSet pruned = acG.prunedMap.get(b);
-        if (pruned == null) {
-            pruned = determinePrunedValue(b);
-            acG.prunedMap.put(b, pruned);
-        }
-        return pruned;
-    }
-
-    /**
-     * Determine pruned value of b.
-     */
-    private SmartBitSet determinePrunedValue(SmartBitSet b) {
-        // Calculate all supersets in b
-        SmartBitSet supersetStatesInB = (SmartBitSet) b.clone();
-        supersetStatesInB.and(acG.supersetStates);
-        if (supersetStatesInB.equals(b)) {
-            return b; // b is composed entirely of superset states: no pruning is needed.
-        }
-        // prune redundant subsets: for each superset, prune all subsets associated with it
-        SmartBitSet prunedValue = (SmartBitSet) b.clone();
-        SmartBitSet[] redundantStatesArr = acG.redundantStates;
-        for (int i = supersetStatesInB.nextSetBit(0); i >= 0; i = supersetStatesInB.nextSetBit(i + 1)) {
-            prunedValue.andNot(redundantStatesArr[i]);
-        }
-        return prunedValue;
-    }
-
-    /**
-     * Add appropriate subset elements to bitset.
-     * Similar to "transition saturation".
-     * E.g., if {1} == {1,2}, then if the bitset contains {1}, we can add {2}.
-     * Used in AC Union and find.
-     * TODO: potentially could be used in unify, although the advantage there is less clear.
-     */
-    public SmartBitSet saturateEltWithSims(SmartBitSet b) {
-        if (acG.prunedMap == null) {
-            return b; // simulation is turned off
-        }
-
-        SmartBitSet supersetStatesInB = SmartBitSet.valueOf(b.words);
-        supersetStatesInB.and(acG.supersetStates);
-        // supersetStatesInB contains all superset states that occur in b
-
-        if (supersetStatesInB.isEmpty()) {
-            // No superset states in B, so there's nothing to saturate.
-            return (SmartBitSet)b.clone();
-        }
-
-        SmartBitSet potentialSubsets = SmartBitSet.valueOf(b.words);
-        potentialSubsets.and(acG.subsetStates);
-        // Keep only the bits that are potential redundant subsets.
-
-        // add redundant states, starting with a copy
-        SmartBitSet saturated = SmartBitSet.valueOf(b.words);
-
-        // Iterate over each state in b that is marked as a superset
-        SmartBitSet[] redundantStatesArr = acG.redundantStates;
-
-        for (int i = supersetStatesInB.nextSetBit(0); i >= 0; i = supersetStatesInB.nextSetBit(i + 1)) {
-            SmartBitSet redundantStates = redundantStatesArr[i];
-            // Note: redundantStates is non-null since i is a known supersetState
-            saturated.or(redundantStates); // Add redundant states
-            potentialSubsets.andNot(redundantStates); // Don't need to test them again
-            if (potentialSubsets.isEmpty()) {
-                // All potential subset states have been added.
-                return saturated;
-            }
-        }
-        return saturated;
     }
 
     @Override

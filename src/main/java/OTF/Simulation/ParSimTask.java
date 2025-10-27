@@ -4,7 +4,7 @@ import java.io.Serial;
 import java.util.BitSet;
 import java.util.concurrent.RecursiveTask;
 
-public class ParSimTask extends RecursiveTask<Boolean> {
+public final class ParSimTask extends RecursiveTask<Boolean> {
   private final int p1, p2, q1, q2;
   private final int nStates, nSymbols;
   private final int[][][] succ;

@@ -7,7 +7,7 @@ import OTF.SmartBitSet;
  * acElts are the lower boundary, and acUnion is the upper boundary.
  * For efficiency, small ACPlus sets are not fully searched; represented by the searchable field.
  */
-public class ACPlus {
+public final class ACPlus {
     public final ACElts acElts; // lower boundary of the convex set
     public final SmartBitSet acUnion; // upper boundary of the convex set
     private int stateId; // state associated with this equivalence class
@@ -41,7 +41,7 @@ public class ACPlus {
             return;
         }
         // If the cardinality difference is large, then this AC already represents a lot of elements
-        int unionCard = this.acUnion.cardinality();
+        final int unionCard = this.acUnion.cardinality();
         if (unionCard <= MIN_CARDINALITY_SEARCHABLE_DIFF) {
             return;
         }

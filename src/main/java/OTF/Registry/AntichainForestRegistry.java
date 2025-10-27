@@ -1,6 +1,7 @@
 package OTF.Registry;
 
 import OTF.Compress.AntichainForest;
+import net.automatalib.automaton.fsa.NFA;
 import net.automatalib.automaton.fsa.impl.CompactNFA;
 
 import java.util.BitSet;
@@ -12,7 +13,7 @@ public class AntichainForestRegistry<I> implements Registry {
     /*
     Note: we do not use the actual NFA, only its size (to bound BitSets and inverted indices)
      */
-    public AntichainForestRegistry(CompactNFA<Integer> nfa, BitSet[] simRelsArr) {
+    public AntichainForestRegistry(NFA<?, Integer> nfa, BitSet[] simRelsArr) {
         this.acf = new AntichainForest(nfa, simRelsArr);
         this.simulation = simRelsArr.length > 0;
     }

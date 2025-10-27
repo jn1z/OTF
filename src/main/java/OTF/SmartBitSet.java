@@ -11,7 +11,7 @@ import java.util.Comparator;
  * Potentially we could also:
  *   remove checkInvariants() and checkRange() validations
  */
-public class SmartBitSet implements Cloneable {
+public final class SmartBitSet implements Cloneable {
   public static final Comparator<SmartBitSet> SMART_CARDINALITY_COMPARATOR =
       Comparator.comparingInt(SmartBitSet::cardinality); // ascending order of cardinality
   /*
@@ -21,14 +21,13 @@ public class SmartBitSet implements Cloneable {
    */
   private final static int ADDRESS_BITS_PER_WORD = 6;
   public final static int BITS_PER_WORD = 1 << ADDRESS_BITS_PER_WORD;
-  private final static int BIT_INDEX_MASK = BITS_PER_WORD - 1;
 
   /* Used to shift left or right for a partial word mask */
   private static final long WORD_MASK = 0xffffffffffffffffL;
-  public static SmartBitSet EMPTY_SMART_BITSET = new SmartBitSet();
-  public boolean dirtyCardinality = true;
-  public int cardinality = -1;
-  public boolean dirtyHash= true;
+  public static final SmartBitSet EMPTY_SMART_BITSET = new SmartBitSet();
+  private boolean dirtyCardinality = true;
+  private int cardinality = -1;
+  private boolean dirtyHash= true;
   private int hash = -1;
 
   private static final int LOOP_UNROLL = 4;
@@ -57,21 +56,11 @@ public class SmartBitSet implements Cloneable {
   }
 
   /**
-   * Every public method must preserve these invariants.
-   */
-  private void checkInvariants() {
-    assert(wordsInUse == 0 || words[wordsInUse - 1] != 0);
-    assert wordsInUse <= words.length;
-    assert(wordsInUse == words.length || words[wordsInUse] == 0);
-  }
-
-  /**
    * Sets the field wordsInUse to the logical size in words of the bit set.
    * WARNING:This method assumes that the number of words actually in use is
    * less than or equal to the current value of wordsInUse!
    */
   private void recalculateWordsInUse() {
-    markAsDirty();
     // Traverse the SmartBitSet until a used word is found
     int i;
     for (i = wordsInUse-1; i >= 0; i--)
@@ -81,7 +70,7 @@ public class SmartBitSet implements Cloneable {
     wordsInUse = i+1; // The new logical size
   }
 
-  private void markAsDirty() {
+  public void markAsDirty() {
     dirtyCardinality = true;
     dirtyHash = true;
   }
@@ -123,7 +112,6 @@ public class SmartBitSet implements Cloneable {
   private SmartBitSet(long[] words) {
     this.words = words;
     this.wordsInUse = words.length;
-    checkInvariants();
   }
 
   /**
@@ -148,20 +136,6 @@ public class SmartBitSet implements Cloneable {
   }
 
   /**
-   * Ensures that the SmartBitSet can hold enough words.
-   * @param wordsRequired the minimum acceptable number of words.
-   */
-  private void ensureCapacity(int wordsRequired) {
-    if (words.length < wordsRequired) {
-      // Allocate larger of doubled size or required size
-      int request = Math.max(2 * words.length, wordsRequired);
-      words = Arrays.copyOf(words, request);
-      sizeIsSticky = false;
-      markAsDirty();
-    }
-  }
-
-  /**
    * Ensures that the SmartBitSet can accommodate a given wordIndex,
    * temporarily violating the invariants.  The caller must
    * restore the invariants before returning to the user,
@@ -169,9 +143,14 @@ public class SmartBitSet implements Cloneable {
    * @param wordIndex the index to be accommodated.
    */
   private void expandTo(int wordIndex) {
-    int wordsRequired = wordIndex+1;
+    final int wordsRequired = wordIndex+1;
     if (wordsInUse < wordsRequired) {
-      ensureCapacity(wordsRequired);
+      if (words.length < wordsRequired) {
+        // Allocate larger of doubled size or required size
+        words = Arrays.copyOf(words, Math.max(2 * words.length, wordsRequired));
+        sizeIsSticky = false;
+        // markAsDirty(); // users already mark as dirty
+      }
       wordsInUse = wordsRequired;
     }
   }
@@ -206,12 +185,12 @@ public class SmartBitSet implements Cloneable {
     if (fromIndex == toIndex)
       return;
 
-    int startWordIndex = wordIndex(fromIndex);
-    int endWordIndex   = wordIndex(toIndex - 1);
+    final int startWordIndex = wordIndex(fromIndex);
+    final int endWordIndex   = wordIndex(toIndex - 1);
     expandTo(endWordIndex);
 
-    long firstWordMask = WORD_MASK << fromIndex;
-    long lastWordMask  = WORD_MASK >>> -toIndex;
+    final long firstWordMask = WORD_MASK << fromIndex;
+    final long lastWordMask  = WORD_MASK >>> -toIndex;
     if (startWordIndex == endWordIndex) {
       // Case 1: One word
       words[startWordIndex] ^= (firstWordMask & lastWordMask);
@@ -228,8 +207,8 @@ public class SmartBitSet implements Cloneable {
       words[endWordIndex] ^= lastWordMask;
     }
 
+    markAsDirty();
     recalculateWordsInUse();
-    checkInvariants();
   }
 
   /**
@@ -242,27 +221,12 @@ public class SmartBitSet implements Cloneable {
     if (bitIndex < 0)
       throw new IndexOutOfBoundsException("bitIndex < 0: " + bitIndex);
 
-    int wordIndex = wordIndex(bitIndex);
+    final int wordIndex = wordIndex(bitIndex);
     expandTo(wordIndex);
 
     words[wordIndex] |= (1L << bitIndex); // Restores invariants
 
-    checkInvariants();
     markAsDirty();
-  }
-
-  /**
-   * Sets the bit at the specified index to the specified value.
-   *
-   * @param  bitIndex a bit index
-   * @param  value a boolean value to set
-   * @throws IndexOutOfBoundsException if the specified index is negative
-   */
-  public void set(int bitIndex, boolean value) {
-    if (value)
-      set(bitIndex);
-    else
-      clear(bitIndex);
   }
 
   /**
@@ -282,12 +246,12 @@ public class SmartBitSet implements Cloneable {
       return;
 
     // Increase capacity if necessary
-    int startWordIndex = wordIndex(fromIndex);
-    int endWordIndex   = wordIndex(toIndex - 1);
+    final int startWordIndex = wordIndex(fromIndex);
+    final int endWordIndex   = wordIndex(toIndex - 1);
     expandTo(endWordIndex);
 
-    long firstWordMask = WORD_MASK << fromIndex;
-    long lastWordMask  = WORD_MASK >>> -toIndex;
+    final long firstWordMask = WORD_MASK << fromIndex;
+    final long lastWordMask  = WORD_MASK >>> -toIndex;
     if (startWordIndex == endWordIndex) {
       // Case 1: One word
       words[startWordIndex] |= (firstWordMask & lastWordMask);
@@ -304,9 +268,7 @@ public class SmartBitSet implements Cloneable {
       words[endWordIndex] |= lastWordMask;
     }
 
-    checkInvariants();
     markAsDirty();
-
   }
 
   /**
@@ -319,26 +281,25 @@ public class SmartBitSet implements Cloneable {
     if (bitIndex < 0)
       throw new IndexOutOfBoundsException("bitIndex < 0: " + bitIndex);
 
-    int wordIndex = wordIndex(bitIndex);
+    final int wordIndex = wordIndex(bitIndex);
     if (wordIndex >= wordsInUse)
       return;
 
     words[wordIndex] &= ~(1L << bitIndex);
 
-    recalculateWordsInUse();
-    checkInvariants();
     markAsDirty();
-
+    if (wordsInUse-1 == wordIndex) {
+      recalculateWordsInUse(); // only need to recompute if we're altering the top element
+    }
   }
 
   /**
-   * Sets all of the bits in this SmartBitSet to {@code false}.
+   * Sets bits in this SmartBitSet to {@code false}.
    */
   public void clear() {
     while (wordsInUse > 0)
       words[--wordsInUse] = 0;
     markAsDirty();
-
   }
 
   /**
@@ -355,9 +316,7 @@ public class SmartBitSet implements Cloneable {
     if (bitIndex < 0)
       throw new IndexOutOfBoundsException("bitIndex < 0: " + bitIndex);
 
-    checkInvariants();
-
-    int wordIndex = wordIndex(bitIndex);
+    final int wordIndex = wordIndex(bitIndex);
     return (wordIndex < wordsInUse)
         && ((words[wordIndex] & (1L << bitIndex)) != 0);
   }
@@ -366,15 +325,6 @@ public class SmartBitSet implements Cloneable {
    * Returns the index of the first bit that is set to {@code true}
    * that occurs on or after the specified starting index. If no such
    * bit exists then {@code -1} is returned.
-   *
-   * <p>To iterate over the {@code true} bits in a {@code SmartBitSet},
-   * use the following loop:
-   *
-   *  <pre> {@code
-   * for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-   *     // operate on index i here
-   * }}</pre>
-   *
    * @param  fromIndex the index to start checking from (inclusive)
    * @return the index of the next set bit, or {@code -1} if there
    *         is no such bit
@@ -383,8 +333,6 @@ public class SmartBitSet implements Cloneable {
   public int nextSetBit(int fromIndex) {
     if (fromIndex < 0)
       throw new IndexOutOfBoundsException("fromIndex < 0: " + fromIndex);
-
-    checkInvariants();
 
     int u = wordIndex(fromIndex);
     if (u >= wordsInUse)
@@ -415,8 +363,6 @@ public class SmartBitSet implements Cloneable {
     if (fromIndex < 0)
       throw new IndexOutOfBoundsException("fromIndex < 0: " + fromIndex);
 
-    checkInvariants();
-
     int u = wordIndex(fromIndex);
     if (u >= wordsInUse)
       return fromIndex;
@@ -430,21 +376,6 @@ public class SmartBitSet implements Cloneable {
         return wordsInUse * BITS_PER_WORD;
       word = ~words[u];
     }
-  }
-
-  /**
-   * Returns the "logical size" of this {@code SmartBitSet}: the index of
-   * the highest set bit in the {@code SmartBitSet} plus one. Returns zero
-   * if the {@code SmartBitSet} contains no set bits.
-   *
-   * @return the logical size of this {@code SmartBitSet}
-   */
-  public int length() {
-    if (wordsInUse == 0)
-      return 0;
-
-    return BITS_PER_WORD * (wordsInUse - 1) +
-        (BITS_PER_WORD - Long.numberOfLeadingZeros(words[wordsInUse - 1]));
   }
 
   /**
@@ -467,11 +398,11 @@ public class SmartBitSet implements Cloneable {
    */
   public boolean intersects(SmartBitSet set) {
     // Determine the number of words to compare.
-    int common = Math.min(this.wordsInUse, set.wordsInUse);
+    final int common = Math.min(this.wordsInUse, set.wordsInUse);
     // Process any leftover words (if common is not a multiple of LOOP_UNROLL).
-    int remainder = common % LOOP_UNROLL;
+    final int remainder = common % LOOP_UNROLL;
     int i = common - 1;
-    int limit = common - remainder;
+    final int limit = common - remainder;
 
     // Process the remainder words one-by-one.
     while (i >= limit) {
@@ -518,6 +449,10 @@ public class SmartBitSet implements Cloneable {
    * @param set a bit set
    */
   public void and(SmartBitSet set) {
+    dirtyAnd(set);
+    markAsDirty();
+  }
+  public void dirtyAnd(SmartBitSet set) {
     // Process only up to the smaller number of words.
     final int commonWords = Math.min(this.wordsInUse, set.wordsInUse);
     int i = 0;
@@ -544,8 +479,6 @@ public class SmartBitSet implements Cloneable {
     }
 
     recalculateWordsInUse();
-    checkInvariants();
-    markAsDirty();
   }
 
   /**
@@ -558,6 +491,10 @@ public class SmartBitSet implements Cloneable {
    * @param set a bit set
    */
   public void or(SmartBitSet set) {
+    dirtyOr(set);
+    markAsDirty();
+  }
+  public void dirtyOr(SmartBitSet set) {
     // Determine the new wordsInUse after the OR operation
     final int newWordsInUse = Math.max(this.wordsInUse, set.wordsInUse);
 
@@ -569,7 +506,7 @@ public class SmartBitSet implements Cloneable {
     // Process the common words (i.e. words present in both sets)
     final int commonWords = Math.min(this.wordsInUse, set.wordsInUse);
     int i = 0;
-    int limit = commonWords - (commonWords % LOOP_UNROLL);
+    final int limit = commonWords - (commonWords % LOOP_UNROLL);
     while (i < limit) {
       this.words[i]     |= set.words[i];
       this.words[i + 1] |= set.words[i + 1];
@@ -589,9 +526,6 @@ public class SmartBitSet implements Cloneable {
 
     // Update the wordsInUse to reflect the union of both sets
     this.wordsInUse = newWordsInUse;
-
-    checkInvariants();
-    markAsDirty();
   }
 
 
@@ -603,6 +537,10 @@ public class SmartBitSet implements Cloneable {
    *         {@code SmartBitSet}
    */
   public void andNot(SmartBitSet set) {
+    dirtyAndNot(set);
+    markAsDirty();
+  }
+  public void dirtyAndNot(SmartBitSet set) {
     // Calculate the number of words to process (the minimum between the two sets)
     final int minWords = Math.min(this.wordsInUse, set.wordsInUse);
     int i = 0;
@@ -622,26 +560,64 @@ public class SmartBitSet implements Cloneable {
       this.words[i] &= ~set.words[i];
       i++;
     }
-
     recalculateWordsInUse();
-    checkInvariants();
+  }
+
+  public void xor(SmartBitSet set) {
+    // New size in slot-space
+    final int newWordsInUse = Math.max(this.wordsInUse, set.wordsInUse);
+
+    // Ensure capacity
+    if (this.words.length < newWordsInUse) {
+      this.words = Arrays.copyOf(this.words, newWordsInUse);
+    }
+
+    // XOR over common region
+    final int commonWords = Math.min(this.wordsInUse, set.wordsInUse);
+    int i = 0;
+    final int limit = commonWords - (commonWords % LOOP_UNROLL);
+    while (i < limit) {
+      this.words[i] ^= set.words[i];
+      this.words[i + 1] ^= set.words[i + 1];
+      this.words[i + 2] ^= set.words[i + 2];
+      this.words[i + 3] ^= set.words[i + 3];
+      i += LOOP_UNROLL;
+    }
+    while (i < commonWords) {
+      this.words[i] ^= set.words[i];
+      i++;
+    }
+
+    // If 'set' is longer, XOR with zeros is a copy of the tail
+    if (set.wordsInUse > this.wordsInUse) {
+      System.arraycopy(set.words, this.wordsInUse,
+          this.words, this.wordsInUse,
+          set.wordsInUse - this.wordsInUse);
+    }
+
+    // Update logical length; invariants will trim trailing zeros if any
+    this.wordsInUse = newWordsInUse;
+
     markAsDirty();
   }
 
   public boolean isSubset(SmartBitSet sup) {
-    long[] subWords = this.words;
-    long[] supWords = sup.words;
-    int subWordsInUse = this.wordsInUse;
-    int supWordsInUse = sup.wordsInUse;
+    final int subWordsInUse = this.wordsInUse;
+    final int supWordsInUse = sup.wordsInUse;
+    if (subWordsInUse > supWordsInUse) {
+      return false; // If there are additional 1s in sub, then it can't possibly be a subset
+    }
 
+    final int limit = subWordsInUse - (subWordsInUse % LOOP_UNROLL);
+    final long[] subWords = this.words;
+    final long[] supWords = sup.words;
     int i = 0;
-    int limit = subWordsInUse - (subWordsInUse % LOOP_UNROLL);
     // Process words in blocks of 4.
     for (; i < limit; i += LOOP_UNROLL) {
-      long supWord0 = (i < supWordsInUse ? supWords[i] : 0L);
-      long supWord1 = ((i + 1) < supWordsInUse ? supWords[i + 1] : 0L);
-      long supWord2 = ((i + 2) < supWordsInUse ? supWords[i + 2] : 0L);
-      long supWord3 = ((i + 3) < supWordsInUse ? supWords[i + 3] : 0L);
+      final long supWord0 = (i < supWordsInUse ? supWords[i] : 0L);
+      final long supWord1 = ((i + 1) < supWordsInUse ? supWords[i + 1] : 0L);
+      final long supWord2 = ((i + 2) < supWordsInUse ? supWords[i + 2] : 0L);
+      final long supWord3 = ((i + 3) < supWordsInUse ? supWords[i + 3] : 0L);
       if ((subWords[i]     & ~supWord0) != 0L ||
           (subWords[i + 1] & ~supWord1) != 0L ||
           (subWords[i + 2] & ~supWord2) != 0L ||
@@ -651,7 +627,7 @@ public class SmartBitSet implements Cloneable {
     }
     // Process any remaining words one-by-one.
     for (; i < subWordsInUse; i++) {
-      long supWord = (i < supWordsInUse ? supWords[i] : 0L);
+      final long supWord = (i < supWordsInUse ? supWords[i] : 0L);
       if ((subWords[i] & ~supWord) != 0L) {
         return false;
       }
@@ -702,9 +678,6 @@ public class SmartBitSet implements Cloneable {
     if (wordsInUse != set.wordsInUse)
       return false;
 
-    checkInvariants();
-    set.checkInvariants();
-
     int i = 0;
     // Process blocks of 4 longs at a time.
     final int limit = wordsInUse - (wordsInUse % LOOP_UNROLL);
@@ -737,9 +710,8 @@ public class SmartBitSet implements Cloneable {
       trimToSize();
 
     try {
-      SmartBitSet result = (SmartBitSet) super.clone();
+      final SmartBitSet result = (SmartBitSet) super.clone();
       result.words = words.clone();
-      result.checkInvariants();
       result.dirtyCardinality = this.dirtyCardinality;
       result.cardinality = this.cardinality;
       result.dirtyHash = this.dirtyHash;
@@ -758,16 +730,13 @@ public class SmartBitSet implements Cloneable {
   void trimToSize() {
     if (wordsInUse != words.length) {
       words = Arrays.copyOf(words, wordsInUse);
-      checkInvariants();
     }
   }
 
   public String toString() {
-    checkInvariants();
-
-    int numBits = (wordsInUse > 128) ?
+    final int numBits = (wordsInUse > 128) ?
         cardinality() : wordsInUse * BITS_PER_WORD;
-    StringBuilder b = new StringBuilder(6*numBits + 2);
+    final StringBuilder b = new StringBuilder(6*numBits + 2);
     b.append('{');
 
     int i = nextSetBit(0);

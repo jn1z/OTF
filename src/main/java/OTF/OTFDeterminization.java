@@ -13,6 +13,8 @@ import net.automatalib.util.partitionrefinement.Block;
 import net.automatalib.util.partitionrefinement.Hopcroft;
 
 public class OTFDeterminization {
+    public static boolean DEBUG = false;
+    private static final long STATES_EXPLORED_PERIOD = 10000L;
     /**
      * Main OTF loop (Algorithm 1).
      * @param nfa - Original NFA
@@ -23,23 +25,7 @@ public class OTFDeterminization {
      * @param <I> - Input symbol type, e.g., Integer
      */
     public static <I> DFA<Integer, I> doOTF(
-        AcceptorPowersetViewTS<BitSet, I, Integer> nfa, Alphabet<I> inputs, Threshold threshold, Registry registry) {
-        return doOTF(nfa, inputs, threshold, registry, new Cancellation(false, Integer.MAX_VALUE));
-    }
-
-    /**
-     * Main OTF loop (Algorithm 1).
-     * @param nfa - Original NFA
-     * @param inputs - Input symbols
-     * @param threshold - Threshold strategy for interrupts
-     * @param registry - Registry, e.g., OTF-CCL
-     * @param cancellation - Cancellation strategy
-     * @return - (Partially) minimized DFA; output of Algorithm 1.
-     * @param <I> - Input symbol type, e.g., Integer
-     */
-    public static <I> DFA<Integer, I> doOTF(
-        AcceptorPowersetViewTS<BitSet, I, Integer> nfa, Alphabet<I> inputs, Threshold threshold, Registry registry,
-        Cancellation cancellation) {
+        AcceptorPowersetViewTS<BitSet, I, ?> nfa, Alphabet<I> inputs, Threshold threshold, Registry registry) {
 
         Deque<DeterminizeRecord<BitSet>> stack = new ArrayDeque<>();
 
@@ -55,7 +41,8 @@ public class OTFDeterminization {
         BitSet finishedStates = new BitSet();
         Deque<Integer> stateBuffer = new ArrayDeque<>();
 
-        while (!stack.isEmpty() && !cancellation.isInterrupted() && !cancellation.isAboveThreshold(out.size())) {
+        long statesExplored = 0;
+        while (!stack.isEmpty()) {
             DeterminizeRecord<BitSet> curr = stack.pop();
             BitSet inState = curr.inputState();
             int outState = curr.outputAddress();
@@ -78,20 +65,26 @@ public class OTFDeterminization {
                 }
                 out.setTransition(outState, inputs.getSymbolIndex(i), outSucc);
             }
+            statesExplored++;
 
             finishedStates.set(outState);
 
             if (complete && threshold.test(out)) {
+                final int oldStatesSoFar = DEBUG ? (out.size() - stateBuffer.size()) : 0;
                 otfMinimization(inputs, out, finishedStates, stateBuffer, registry);
-                threshold.update(out.size() - stateBuffer.size());
+                final int statesSoFar = out.size() - stateBuffer.size();
+                threshold.update(statesSoFar);
+                if (DEBUG) {
+                    System.out.println("DEBUG: Periodic minimization: " + oldStatesSoFar + " -> " + statesSoFar + " states added");
+                }
+            }
+            if (DEBUG && statesExplored % STATES_EXPLORED_PERIOD == 0) {
+                System.out.println("DEBUG: Explored " + statesExplored + " states - "
+                + stack.size() + " states left in queue - " + (out.size() - stateBuffer.size()) + " states added");
             }
         }
 
-        if (!cancellation.isInterrupted() && !cancellation.isAboveThreshold(out.size())) {
-            return out;
-        } else {
-            return null;
-        }
+        return out;
     }
 
 

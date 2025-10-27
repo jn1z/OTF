@@ -10,7 +10,7 @@ import java.util.*;
  * Each bitset is of length ACElts.size().
  * bitsetArr[i] is a bitset, where its jth bit == the ith bit of the jth bitset in ACElts.
  */
-public class InvertedIndex {
+public final class InvertedIndex {
   SmartBitSet[] inverted;
   private final SmartBitSet nullInvertedElts; // tracks null elements of inverted
 
@@ -19,7 +19,7 @@ public class InvertedIndex {
   private final SmartBitSet tempIntInv = new SmartBitSet();
 
   // common root of all ACElts, often empty. This can be an under-approximation.
-  private final SmartBitSet commonRoot;
+  private final SmartBitSet dirtyCommonRoot;
 
   // This keeps us from doing too much work on repeated ORs
   private int MAX_CUTOFF = 500;
@@ -33,13 +33,13 @@ public class InvertedIndex {
     inverted = new SmartBitSet[nNFA];
     nullInvertedElts = new SmartBitSet(nNFA);
     nullInvertedElts.set(0,nNFA); // completely null at first
-    commonRoot = new SmartBitSet(nNFA);
-    commonRoot.set(0,nNFA);
+    dirtyCommonRoot = new SmartBitSet(nNFA);
+    dirtyCommonRoot.set(0,nNFA);
     MAX_CUTOFF = Math.max(MAX_CUTOFF, nNFA / MAX_FRACTION);
     // Initialize inverted array
-    int eltsSize = elts.size();
+    final int eltsSize = elts.size();
     for (int j = 0; j < eltsSize; j++) {
-      insert(elts.get(j));
+      insert(elts.get(j), eltsSize);
     }
   }
 
@@ -47,48 +47,63 @@ public class InvertedIndex {
    * Overwrite the jth element of ACElt. Takes nNFA operations.
    */
   public void overwrite(SmartBitSet b, int j) {
-    int bSize = b.size();
     for (int k=0;k<inverted.length;k++) {
       SmartBitSet inv = inverted[k];
       if (inv == null) {
-        inverted[k] = inv = new SmartBitSet(bSize);
+        inverted[k] = inv = new SmartBitSet(this.maxElts);
         nullInvertedElts.clear(k);
       }
-      inv.set(j, b.get(k));
+      if (b.get(k)) {
+        inv.set(j);
+      } else {
+        inv.clear(j);
+      }
     }
-    commonRoot.and(b);
+    dirtyCommonRoot.dirtyAnd(b);
+  }
+
+  // Overwrite only elements that have changed (average-case, this means writing half as many elements).
+  // This should be even faster when b is sparse, which is common for the AC use-case.
+  public void overwrite(SmartBitSet b, SmartBitSet oldElt, int j) {
+    final SmartBitSet tempXOR = (SmartBitSet) b.clone();
+    tempXOR.xor(oldElt);
+    for (int k = tempXOR.nextSetBit(0); k >= 0; k = tempXOR.nextSetBit(k + 1)) {
+      SmartBitSet inv = inverted[k];
+      if (inv == null) {
+        inverted[k] = inv = new SmartBitSet(this.maxElts);
+        nullInvertedElts.clear(k);
+      }
+      if (b.get(k)) {
+        inv.set(j);
+      } else {
+        inv.clear(j);
+      }
+    }
+    dirtyCommonRoot.dirtyAnd(b);
   }
 
   /**
    * Insert the jth element of ACElt.
    * Takes <= nNFA operations, on average more like nNFA/2.
    */
-  public void insert(SmartBitSet b) {
-    int index = maxElts++;
-    int bSize = b.size();
+  public void insert(SmartBitSet b, int sizeHint) {
+    final int index = maxElts++;
     for (int k = b.nextSetBit(0); k >= 0; k = b.nextSetBit(k + 1)) {
       SmartBitSet inv = inverted[k];
       if (inv == null) {
-        inverted[k] = inv = new SmartBitSet(bSize);
+        inverted[k] = inv = new SmartBitSet(sizeHint);
         nullInvertedElts.clear(k);
       }
       inv.set(index);
     }
-    commonRoot.and(b);
+    dirtyCommonRoot.dirtyAnd(b);
   }
 
   /**
    * Find the first element of acElts (ignoring deadElts) that's a subset of b, or return null.
    */
   public SmartBitSet findFirstSubset(List<SmartBitSet> acElts, SmartBitSet deadElts, SmartBitSet b) {
-    int nextClear = b.nextClearBit(0);
-
-    if (nextClear >= maxElts || nextClear >= inverted.length) {
-      // b is empty, no (nonequal) subsets of it
-      // or, b is all ones ? Very unlikely, but it happens.
-      return null;
-    }
-    if (!commonRoot.isEmpty() && !commonRoot.isSubset(b)) {
+    if (!dirtyCommonRoot.isEmpty() && !dirtyCommonRoot.isSubset(b)) {
       // If common root isn't a subset of b, then clearly no ACElt is a subset of b
       // This is a shortcut for an element of bShort corresponding to an element of inverted[i] that's all 1s
       return null;
@@ -99,24 +114,27 @@ public class InvertedIndex {
   }
 
   private void filterPotentialSubsets(SmartBitSet deadElts, SmartBitSet b) {
-    SmartBitSet bShort = (SmartBitSet)b.clone();
-    bShort.or(nullInvertedElts); // ignore null inverted bits
+    final SmartBitSet bShort = (SmartBitSet)b.clone();
+    bShort.dirtyOr(nullInvertedElts); // ignore null inverted bits
 
     // Start by including all dead elements
     tempUnionInv.clear();
-    tempUnionInv.or(deadElts);
+    tempUnionInv.dirtyOr(deadElts);
 
-    int maxCardinality = (int)(maxElts * MAX_CARD_FRACTION);
+    final int maxCardinality = (int)(maxElts * MAX_CARD_FRACTION);
     int maxCount = 0;
     // For each clear bit in 'b', OR the corresponding inverted BitSet
-    SmartBitSet[] invertedArr = inverted;
+    final SmartBitSet[] invertedArr = inverted;
     for (int i = bShort.nextClearBit(0); i >= 0 && i < inverted.length; i = bShort.nextClearBit(i + 1)) {
-      tempUnionInv.or(invertedArr[i]);
+      tempUnionInv.dirtyOr(invertedArr[i]);
       if (++maxCount > MAX_CUTOFF) {
         break; // Cutoff to avoid diminishing returns with repeated iterations
       }
-      if (maxCount % LOOP_CARD_TEST == 0 && tempUnionInv.cardinality() > maxCardinality) {
-        break; // Cutoff when cardinality is close to max
+      if (maxCount % LOOP_CARD_TEST == 0) {
+        tempUnionInv.markAsDirty();
+        if (tempUnionInv.cardinality() > maxCardinality) {
+          break; // Cutoff when cardinality is close to max
+        }
       }
     }
   }
@@ -124,7 +142,7 @@ public class InvertedIndex {
   private SmartBitSet determineFirstSubset(List<SmartBitSet> acElts, SmartBitSet b) {
     // Iterate over potential indices
     for (int i = tempUnionInv.nextClearBit(0); i >= 0 && i < maxElts; i = tempUnionInv.nextClearBit(i + 1)) {
-      SmartBitSet oldElt = acElts.get(i);
+      final SmartBitSet oldElt = acElts.get(i);
       if (oldElt.isSubset(b)) {
         return oldElt;
       }
@@ -139,22 +157,16 @@ public class InvertedIndex {
   public SmartBitSet findSupersetIndices(
       List<SmartBitSet> acElts, SmartBitSet deadElts, SmartBitSet b, boolean filterOnly) {
     if (acElts.isEmpty()) {
-      return SmartBitSet.EMPTY_SMART_BITSET;
+      return SmartBitSet.EMPTY_SMART_BITSET; // empty list (can't happen): nothing can be a superset
     }
-    int nextSet = b.nextSetBit(0);
-    if (nextSet >= inverted.length) {
-      return SmartBitSet.EMPTY_SMART_BITSET;
-    }
-
-    if (b.intersects(nullInvertedElts)) {
-      return SmartBitSet.EMPTY_SMART_BITSET;
-    }
-
-    if (nextSet == -1) {
+    if (b.isEmpty()) {
       // All zeroes, so everything is a superset. Return all (non-dead) elements
-      SmartBitSet supersets = (SmartBitSet) deadElts.clone();
+      final SmartBitSet supersets = (SmartBitSet) deadElts.clone();
       supersets.flip(0, acElts.size());
       return supersets;
+    }
+    if (b.intersects(nullInvertedElts)) {
+      return SmartBitSet.EMPTY_SMART_BITSET; // bits in b but not in InvertedIndex: nothing can be a superset
     }
 
     filterPotentialSupersets(deadElts, b);
@@ -167,29 +179,30 @@ public class InvertedIndex {
   }
 
   private void filterPotentialSupersets(SmartBitSet deadElts, SmartBitSet b) {
+    final int firstSetBit = b.nextSetBit(0);
+    final SmartBitSet[] invertedArr = inverted;
+
     tempIntInv.clear();
-    int firstSetBit = b.nextSetBit(0);
-
-    SmartBitSet[] invertedArr = inverted;
-
-    tempIntInv.or(invertedArr[firstSetBit]);
-
+    tempIntInv.dirtyOr(invertedArr[firstSetBit]);
     // Exclude dead elements
-    tempIntInv.andNot(deadElts);
+    tempIntInv.dirtyAndNot(deadElts);
 
-    int minCardinality = (int)(maxElts * (1.0f -MAX_CARD_FRACTION));
+    final int minCardinality = (int)(maxElts * (1.0f -MAX_CARD_FRACTION));
     int maxCount = 0;
     // For each set bit in 'b', AND the corresponding inverted BitSet
     for (int i = b.nextSetBit(firstSetBit+1); i >= 0; i = b.nextSetBit(i + 1)) {
-      tempIntInv.and(invertedArr[i]);
+      tempIntInv.dirtyAnd(invertedArr[i]);
       if (tempIntInv.isEmpty()) {
         return;
       }
       if (++maxCount > MAX_CUTOFF) {
         return; // Cutoff to avoid diminishing returns with repeated iterations
       }
-      if (maxCount % LOOP_CARD_TEST == 0 && tempUnionInv.cardinality() < minCardinality) {
-        return; // Cutoff when cardinality is close to min
+      if (maxCount % LOOP_CARD_TEST == 0) {
+        tempIntInv.markAsDirty();
+        if (tempIntInv.cardinality() < minCardinality) {
+          return; // Cutoff when cardinality is close to min
+        }
       }
     }
   }
@@ -197,7 +210,7 @@ public class InvertedIndex {
   private void validateSupersets(List<SmartBitSet> acElts, SmartBitSet b) {
     // Iterate over potential indices
     for (int i = tempIntInv.nextSetBit(0); i >= 0 && i < maxElts; i = tempIntInv.nextSetBit(i + 1)) {
-      SmartBitSet oldElt = acElts.get(i);
+      final SmartBitSet oldElt = acElts.get(i);
       if (!b.isSubset(oldElt)) {
         tempIntInv.clear(i);
       }
@@ -210,7 +223,7 @@ public class InvertedIndex {
   }
 
   public String toString() {
-    StringBuilder sb = new StringBuilder();
+    final StringBuilder sb = new StringBuilder();
     sb.append("Inverted:\n");
     for (int i = 0; i < this.inverted.length; i++) {
       sb.append(i).append(" : ").append(inverted[i]).append("\n");

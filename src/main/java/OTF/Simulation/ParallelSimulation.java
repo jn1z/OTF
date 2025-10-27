@@ -6,7 +6,7 @@ import it.unimi.dsi.fastutil.ints.*;
 import net.automatalib.automaton.fsa.impl.CompactNFA;
 
 
-public class ParallelSimulation {
+public final class ParallelSimulation {
 	/**
 	 * Compute backward and forward simulation relations; may also alter NFA.
 	 * Alterations are to force one initial state, and at most two final states.

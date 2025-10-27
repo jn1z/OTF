@@ -1,11 +1,14 @@
 package OTF.Simulation;
 
+import java.util.Arrays;
+
 /**
  * BitSet of fixed length (numBits).
  * This avoids dynamic resizing, which is good since we're messing around with threading.
  */
 public final class FixedBitSet {
-  private final long[] bits; // Array of longs holding the bits
+  final long[] bits; // Array of longs holding the bits
+  private final long lastWordMask; // mask off bits beyond numBits in the last word
 
   /**
    * Creates a new FixedBitSet. The internally allocated long array will be exactly the size needed
@@ -14,26 +17,38 @@ public final class FixedBitSet {
    * @param numBits the number of bits needed
    */
   public FixedBitSet(final int numBits) {
-    bits = new long[((numBits - 1) >> 6) + 1];
+    this.bits = new long[((numBits - 1) >> 6) + 1];
+    final int r = numBits & 63;
+    this.lastWordMask = (r == 0) ? -1L : (-1L >>> (64 - r));
   }
 
   public boolean get(final int index) {
     final int wordNum = index >> 6; // div 64
-    // signed shift will keep a negative index and cause an exception, removing the need for an explicit check.
-    final long bitmask = 1L << index;
+    final long bitmask = 1L << (index & 63);
     return (bits[wordNum] & bitmask) != 0;
   }
 
   public void set(final int index) {
     final int wordNum = index >> 6; // div 64
-    final long bitmask = 1L << index;
+    final long bitmask = 1L << (index & 63);
     bits[wordNum] |= bitmask;
   }
 
   public void clear(final int index) {
     final int wordNum = index >> 6; // div 64
-    final long bitmask = 1L << index;
+    final long bitmask = 1L << (index & 63);
     bits[wordNum] &= ~bitmask;
+  }
+
+  public void setAll() {
+    Arrays.fill(bits, -1L);
+    bits[bits.length - 1] &= lastWordMask; // clear tail beyond numBits
+  }
+  public void and(final FixedBitSet other) {
+    for (int i = 0; i < bits.length; i++) bits[i] &= other.bits[i];
+  }
+  public void andNot(final FixedBitSet other) {
+    for (int i = 0; i < bits.length; i++) bits[i] &= ~other.bits[i];
   }
 
   /**
@@ -53,7 +68,9 @@ public final class FixedBitSet {
     // Create a view of that word where all bits _below_ 'index' are discarded.
     // Right-shifting the entire long by 'index' bits moves bit 'index' down to position 0,
     // and any lower bits (positions 0..index−1) vanish.
+    // unsigned shift by in-word offset, not the absolute index
     long word = bits[i] >> index;
+    if (i == numWords - 1) word &= lastWordMask;
 
     if (word != 0) {
       // Long.numberOfTrailingZeros(word) gives the position of the least-significant 1
@@ -65,6 +82,7 @@ public final class FixedBitSet {
     // Scan each subsequent 64-bit word until we find a non-zero one.
     while (++i < numWords) {
       word = bits[i];
+      if (i == numWords - 1) word &= lastWordMask;
       if (word != 0) {
         // Found a word with at least one set bit.
         // (i << 6) computes the starting bit-index of this word (i*64).
