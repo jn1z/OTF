@@ -100,7 +100,7 @@ public class OTFCommandLine {
    * @param origNFA - original NFA
    * @return - determinized and minimized DFA.
    */
-  private static CompactDFA<Integer> allAlgorithms(String algorithm, CompactNFA<Integer> origNFA) {
+  static CompactDFA<Integer> allAlgorithms(String algorithm, CompactNFA<Integer> origNFA) {
     System.out.println();
     System.out.println("Invoking algorithm:" + algorithm);
     String basicAlgorithm = algorithm.toLowerCase();
@@ -119,24 +119,23 @@ public class OTFCommandLine {
 
     /**
      * OTF-CCL or OTF-CCLS, with trim and bisim.
-     * @param origNFA - original NFA
+     * @param nfa - original NFA
      * @param simulate - whether to simulate. If false, uses OTF-CCL. If true, simulates and uses OTF-CCLS.
      * @return minimized DFA
      */
-  public static CompactDFA<Integer> CCL(CompactNFA<Integer> origNFA, boolean simulate) {
+  public static CompactDFA<Integer> CCL(CompactNFA<Integer> nfa, boolean simulate) {
     final Threshold threshold = Threshold.adaptiveSteps(Threshold.DEFAULT_THRESHOLD_SIZE);
 
-    CompactNFA<Integer> reducedNFA = trimAndBisim(origNFA);
-    origNFA.clear(); // GC hint
-    final Alphabet<Integer> alphabet = reducedNFA.getInputAlphabet();
+    nfa = trimAndBisim(nfa);
+    final Alphabet<Integer> alphabet = nfa.getInputAlphabet();
 
     ArrayList<BitSet> simRels = new ArrayList<>();
-    reducedNFA = generateSimRels(simulate, reducedNFA, simRels);
+    nfa = generateSimRels(simulate, nfa, simRels);
 
-    Registry registry = new AntichainForestRegistry<>(reducedNFA, simRels.toArray(new BitSet[0]));
+    Registry registry = new AntichainForestRegistry<>(nfa, simRels.toArray(new BitSet[0]));
     simRels.clear(); // GC
 
-    final DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(reducedNFA.powersetView(), alphabet, threshold, registry);
+    final DFA<?, Integer> otfDFA = OTFDeterminization.doOTF(nfa.powersetView(), alphabet, threshold, registry);
     final CompactDFA<Integer> minimizedDFA = HopcroftMinimizer.minimizeDFA(otfDFA, alphabet);
 
     System.out.println("CCL max intermediate count: " + registry.getMaxIntermediateCount());
@@ -148,25 +147,24 @@ public class OTFCommandLine {
   /**
    * BRZ, BRZ-S, BRZ-OTF-CCL, BRZ-OTF-CCLS, with trim and bisim
    * BRZ-S is similar to Glabbeek-Ploeger's SUBSET(close c=) algorithm, if applied to Brzozowski step 1.
-   * @param origNFA - original NFA
+   * @param nfa - original NFA
    * @param OTF - if false, uses SC for step 1 -- i.e., BRZ or BRZ-S algorithms.
    * @param simulate - whether to simulate -- i.e., if false, BRZ or BRZ-OTF-CCL, otherwise BRZ-S or BRZ-OTF-CCLS
    * @return - minimized DFA
    */
-  private static CompactDFA<Integer> Brz(CompactNFA<Integer> origNFA, boolean OTF, boolean simulate) {
+  private static CompactDFA<Integer> Brz(CompactNFA<Integer> nfa, boolean OTF, boolean simulate) {
     long before = System.currentTimeMillis();
-    final CompactNFA<Integer> reversedNFA = NFATrim.reverse(origNFA, CompactNFA::new);
+    nfa = NFATrim.reverse(nfa, CompactNFA::new);
     long after = System.currentTimeMillis();
     System.out.println("reverse time: " + ((after - before) / 1000f) + "s");
 
-    Alphabet<Integer> reversedNFAAlphabet = reversedNFA.getInputAlphabet();
+    Alphabet<Integer> reversedNFAAlphabet = nfa.getInputAlphabet();
     Alphabet<Integer> newAlphabet = Alphabets.integers(0,reversedNFAAlphabet.size()-1);
     // this allows reversedNFA to be GC'ed earlier
 
-    final CompactDFA<Integer> brz1DFA = BrzStep1(OTF, reversedNFA, simulate);
-    final CompactDFA<Integer> brz2DFA = BrzStep2(brz1DFA, newAlphabet);
-
-    return brz2DFA;
+    final CompactDFA<Integer> brz1DFA = BrzStep1(OTF, nfa, simulate);
+    nfa.clear(); // GC hint
+    return BrzStep2(brz1DFA, newAlphabet);
   }
 
   /**
@@ -179,8 +177,8 @@ public class OTFCommandLine {
     if (OTF) {
       brz1DFA = CCL(reversedNFA, simulate);
     } else {
-      final CompactNFA<Integer> reducedNFA = trimAndBisim(reversedNFA);
-      brz1DFA = doSCInternal(simulate, reducedNFA, reducedNFA.getInputAlphabet(), "powerset DFA (BRZ step 1):");
+      reversedNFA = trimAndBisim(reversedNFA);
+      brz1DFA = doSCInternal(simulate, reversedNFA, reversedNFA.getInputAlphabet(), "powerset DFA (BRZ step 1):");
     }
     long after = System.currentTimeMillis();
     System.out.println("Minimized BRZ step 1 size: " + brz1DFA.size());
@@ -203,17 +201,16 @@ public class OTFCommandLine {
   /**
    * SC or SCS. SCS is similar to Glabbeek-Ploeger's SUBSET(close c=) algorithm.
    * Note we have the option to not run trim and bisimulation. This is for the sanity check.
-   * @param origNFA - original NFA
+   * @param nfa - original NFA
    * @param trimAndBisim - whether to trim and bisimulation reduce
    * @param simulate - whether to simulation reduce and use simulation relations.
    * @return - minimized DFA
    */
-  private static CompactDFA<Integer> SC(final CompactNFA<Integer> origNFA, boolean trimAndBisim, boolean simulate) {
-    CompactNFA<Integer> newNFA = origNFA;
+  private static CompactDFA<Integer> SC(CompactNFA<Integer> nfa, boolean trimAndBisim, boolean simulate) {
     if (trimAndBisim) {
-      newNFA = trimAndBisim(origNFA);
+      nfa = trimAndBisim(nfa);
     }
-    return doSCInternal(simulate, newNFA, newNFA.getInputAlphabet(), "Unminimized SC DFA size:");
+    return doSCInternal(simulate, nfa, nfa.getInputAlphabet(), "Unminimized SC DFA size:");
   }
 
   private static CompactDFA<Integer> doSCInternal(boolean simulate, CompactNFA<Integer> nfa, Alphabet<Integer> alphabet, String powersetOutput) {
@@ -236,27 +233,27 @@ public class OTFCommandLine {
 
   /**
    * Trim and bisimulation reductions.
-   * @param origNFA - original NFA
+   * @param nfa - original NFA
    * @return reduced NFA
    */
-  private static CompactNFA<Integer> trimAndBisim(final CompactNFA<Integer> origNFA) {
-      int prevSize = origNFA.size();
+  private static CompactNFA<Integer> trimAndBisim(CompactNFA<Integer> nfa) {
+      int prevSize = nfa.size();
       long before = System.currentTimeMillis();
 
-      CompactNFA<Integer> reducedNFA = NFATrim.trim(origNFA);
-      if (reducedNFA.size() < prevSize) {
-          System.out.println("Trimmed to: " + reducedNFA.size());
-          prevSize = reducedNFA.size();
+      nfa = NFATrim.trim(nfa);
+      if (nfa.size() < prevSize) {
+          System.out.println("Trimmed to: " + nfa.size());
+          prevSize = nfa.size();
       }
 
-      reducedNFA = NFATrim.bisim(reducedNFA);
-      if (reducedNFA.size() < prevSize) {
-          System.out.println("Bisim forward/backward reduced to: " + reducedNFA.size());
+      nfa = NFATrim.bisim(nfa);
+      if (nfa.size() < prevSize) {
+          System.out.println("Bisim forward/backward reduced to: " + nfa.size());
       }
 
       long after = System.currentTimeMillis();
       System.out.println("trim/bisim time: " +  ((after - before) / 1000f) + "s");;
-      return reducedNFA;
+      return nfa;
   }
 
   private static CompactNFA<Integer> generateSimRels(boolean simulate, CompactNFA<Integer> reducedNFA, ArrayList<BitSet> simRels) {
