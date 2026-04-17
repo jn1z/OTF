@@ -1,6 +1,6 @@
 # OTF (On-The-Fly) Algorithms
 
-See the paper [Deconstructing Subset Construction: Reducing While Determinizing](https://arxiv.org/abs/2505.10319) for more details.
+See the TACAS 2026 paper [Deconstructing Subset Construction: Reducing While Determinizing](https://doi.org/10.1007/978-3-032-22749-2_20) for more details.
 
 ## The following new algorithms are implemented:
 
