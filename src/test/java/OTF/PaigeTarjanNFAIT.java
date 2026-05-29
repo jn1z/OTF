@@ -9,11 +9,9 @@ import net.automatalib.util.partitionrefinement.Valmari;
 import net.automatalib.util.partitionrefinement.ValmariExtractors;
 import net.automatalib.util.partitionrefinement.ValmariInitializers;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-@Tag("IntegTest")
-public class PaigeTarjanNFAIntegTest {
+public class PaigeTarjanNFAIT {
     @Test
     void testNFAReduction() {
         for (int size = 5; size < 15; size++) {

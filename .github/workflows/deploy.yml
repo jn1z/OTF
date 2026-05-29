@@ -1,0 +1,22 @@
+name: Publish artifacts to GitHub Packages
+on:
+  release:
+    types: [published]
+jobs:
+  publish:
+    name: "Publish artifacts"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Publish
+        run: mvn --batch-mode deploy -Pbundles,release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -84,7 +84,7 @@ public final class InvertedIndex {
 
   /**
    * Insert the jth element of ACElt.
-   * Takes <= nNFA operations, on average more like nNFA/2.
+   * Takes &lt;= nNFA operations, on average more like nNFA/2.
    */
   public void insert(SmartBitSet b, int sizeHint) {
     final int index = maxElts++;

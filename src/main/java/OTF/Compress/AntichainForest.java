@@ -8,7 +8,7 @@ import net.automatalib.automaton.fsa.NFA;
 
 /**
  * Antichain Disjoint-Set Forest, representing equivalence classes.
- * 1-element equivalence classes are simply represented as BitSets <-> ints.
+ * 1-element equivalence classes are simply represented as BitSets &lt;-&gt; ints.
  * Larger equivalence classes are represented by ACPlus elements.
  */
 public final class AntichainForest {

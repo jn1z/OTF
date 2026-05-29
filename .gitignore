@@ -1,0 +1,24 @@
+*.class
+classes/
+.project
+
+# Maven build
+target/
+
+# Mac-specific files
+.DS_Store
+
+# IntelliJ
+.idea/
+*.iml
+
+# vscode
+.vscode/
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.ear

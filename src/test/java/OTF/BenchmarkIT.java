@@ -15,11 +15,9 @@ import net.automatalib.util.automaton.Automata;
 import net.automatalib.util.automaton.fsa.NFAs;
 import net.automatalib.util.automaton.minimizer.HopcroftMinimizer;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-@Tag("IntegTest")
-public class BenchmarkTest {
+public class BenchmarkIT {
     private static final List<CompactNFA<Integer>> AUTOMATA;
     private static final Threshold MAX_THRESHOLD = Threshold.maxSteps(100);
 
