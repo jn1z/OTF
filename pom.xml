@@ -166,7 +166,7 @@
                     <artifactId>maven-release-plugin</artifactId>
                     <version>3.1.0</version>
                     <configuration>
-                        <tagNameFormat>otf-@{version}</tagNameFormat>
+                        <tagNameFormat>@{version}</tagNameFormat>
                         <preparationProfiles>integration-tests,bundles</preparationProfiles>
                         <!-- install only, since deployment is done by GitHub -->
                         <goals>install</goals>
