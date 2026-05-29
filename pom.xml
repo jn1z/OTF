@@ -281,25 +281,5 @@
                 </plugins>
             </build>
         </profile>
-        <profile>
-            <!-- additional release steps (signing, etc.) -->
-            <id>release</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>dev.sigstore</groupId>
-                        <artifactId>sigstore-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>sign</id>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
     </profiles>
 </project>
