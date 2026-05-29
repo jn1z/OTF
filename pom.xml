@@ -168,7 +168,7 @@
                     <configuration>
                         <tagNameFormat>@{version}</tagNameFormat>
                         <preparationProfiles>integration-tests,bundles</preparationProfiles>
-                        <!-- install only, since deployment is done by GitHub -->
+                        <!-- install only, since deployment is done by JitPack -->
                         <goals>install</goals>
                         <!-- explicitly disable preparationProfiles until https://issues.apache.org/jira/browse/MRELEASE-1124 is fixed-->
                         <releaseProfiles>!integration-tests,!bundles</releaseProfiles>
