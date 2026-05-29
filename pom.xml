@@ -4,7 +4,7 @@
 
     <groupId>io.github.jn1z</groupId>
     <artifactId>otf</artifactId>
-    <version>1.1.1-RC1</version>
+    <version>1.1.1-SNAPSHOT</version>
 
     <name>OTF</name>
     <url>https://github.com/jn1z/OTF</url>
@@ -39,7 +39,7 @@
         <connection>scm:git:https://github.com/jn1z/OTF.git</connection>
         <developerConnection>scm:git:git@github.com:jn1z/OTF.git</developerConnection>
         <url>https://github.com/jn1z/OTF/tree/main</url>
-        <tag>otf-1.1.1-RC1</tag>
+        <tag>HEAD</tag>
     </scm>
     <issueManagement>
         <system>GitHub Issues</system>
