@@ -63,7 +63,7 @@ public final class AntichainForest {
         if (this.curIntermediateCount > this.maxIntermediateCount) {
             this.maxIntermediateCount = this.curIntermediateCount;
         }
-        final SmartBitSet smartEltFull = SmartBitSet.valueOf(newEltFull.toLongArray());
+        final SmartBitSet smartEltFull = SmartBitSet.fromBitSet(newEltFull);
         final SmartBitSet newElt = acG.simAccelerate.shouldAccelerate ?
             acG.simAccelerate.pruneEltWithSims(smartEltFull) : smartEltFull;
 
@@ -76,7 +76,7 @@ public final class AntichainForest {
      * Get BitSet equivalence class (state), otherwise return MISSING_ELEMENT.
      */
     public int get(BitSet eltFull) {
-        final SmartBitSet smartEltFull = SmartBitSet.valueOf(eltFull.toLongArray());
+        final SmartBitSet smartEltFull = SmartBitSet.fromBitSet(eltFull);
         final SmartBitSet prunedElt = acG.simAccelerate.shouldAccelerate ?
             acG.simAccelerate.pruneEltWithSims(smartEltFull) : smartEltFull;
 

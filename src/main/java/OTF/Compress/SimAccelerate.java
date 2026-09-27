@@ -46,7 +46,7 @@ public final class SimAccelerate {
     for(int i=0;i<simSupersetRels.length;i++) {
       final BitSet b = simSupersetRels[i];
       if (b != null) {
-        redundantStates[i] = SmartBitSet.valueOf(b.toLongArray());
+        redundantStates[i] = SmartBitSet.fromBitSet(b);
         redundantStates[i].clear(i); // enforce strict subset: never contain i itself
         supersetStates.set(i);
         subsetStates.or(redundantStates[i]);

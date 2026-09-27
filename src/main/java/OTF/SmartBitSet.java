@@ -1,6 +1,7 @@
 package OTF;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 
 /**
@@ -133,6 +134,15 @@ public final class SmartBitSet implements Cloneable {
     for (n = longs.length; n > 0 && longs[n - 1] == 0; n--)
       ;
     return new SmartBitSet(Arrays.copyOf(longs, n));
+  }
+
+  /**
+   * Returns a new SmartBitSet containing all the bits in the given BitSet.
+   * BitSet.toLongArray() already returns a new, trimmed array, so the new
+   * SmartBitSet can take ownership of it without making another copy.
+   */
+  public static SmartBitSet fromBitSet(BitSet bits) {
+    return new SmartBitSet(bits.toLongArray());
   }
 
   /**
