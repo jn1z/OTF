@@ -595,8 +595,9 @@ public final class SmartBitSet implements Cloneable {
           set.wordsInUse - this.wordsInUse);
     }
 
-    // Update logical length; invariants will trim trailing zeros if any
+    // Restore the normalized logical length after high words cancel.
     this.wordsInUse = newWordsInUse;
+    recalculateWordsInUse();
 
     markAsDirty();
   }
