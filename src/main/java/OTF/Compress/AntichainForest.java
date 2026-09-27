@@ -165,6 +165,10 @@ public final class AntichainForest {
 
         // determine this before we clear all of the secondary AC unions
         SmartBitSet newUnion = newUnion(secondaryACs, secondaryEltsWithoutAC);
+        // A singleton primary may take over a secondary AC that lacks some of its bits.
+        if (primaryElt != null) {
+            newUnion.or(primaryElt);
+        }
 
         final List<SmartBitSet> eltsToUnify = new ArrayList<>(eltsToUnifySize + 1);
         eltsToUnify.addAll(secondaryEltsWithoutAC);
@@ -175,6 +179,7 @@ public final class AntichainForest {
         unifyEltsIntoPrimaryAC(eltsToUnify, primaryAC);
 
         updateACUnion(primaryAC, newUnion);
+        primaryAC.determineSearchable();
 
         tempIntermediateCount += primaryAC.acElts.getEltsSize();
 
@@ -214,8 +219,6 @@ public final class AntichainForest {
         for (SmartBitSet eltToUnify: eltsToUnify) {
             primaryAC.acElts.unifyEltIntoAC(eltToUnify, acG.nNFA, sizeHint);
         }
-
-        primaryAC.determineSearchable();
     }
 
     // 3 cases based on primary being 1-elt or AC, and secondaries being 1-elt or AC
