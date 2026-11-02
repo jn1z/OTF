@@ -18,8 +18,8 @@ See the TACAS 2026 paper [Deconstructing Subset Construction: Reducing While Det
 
 ## What this repository contains
 
-1. OTF-1.1.0.jar : a library to run OTF algorithms
-2. Source code to build OTF-1.1.0.jar and OTFStandalone-1.1.0.jar (a command-line tool for demonstration purposes)
+1. OTF-1.2.0.jar : a library to run OTF algorithms
+2. Source code to build OTF-1.2.0.jar and OTFStandalone-1.2.0.jar (a command-line tool for demonstration purposes)
 3. [OTF.sh](OTF.sh): a script to build the jars and run the command-line tool
 
 ## Building and running
